@@ -17,6 +17,38 @@ from ._solver import BaseSolver
 from .det_engine import evaluate, train_one_epoch
 
 
+def _restore_best_metrics(log_path, stop_epoch):
+    """Recover checkpoint-selection baselines from an existing training log."""
+    best = {"f1": float("-inf"), "map50": float("-inf"), "map5095": float("-inf")}
+    best_epoch = {name: -1 for name in best}
+    stage_f1 = {"stage1": float("-inf"), "stage2": float("-inf")}
+    if log_path is None or not log_path.is_file():
+        return best, best_epoch, stage_f1
+
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        try:
+            record = json.loads(line)
+            epoch = int(record["epoch"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+
+        detection = record.get("test_detection_metrics") or {}
+        coco = record.get("test_coco_eval_bbox") or []
+        values = {
+            "f1": detection.get("f1"),
+            "map50": coco[1] if len(coco) > 1 else None,
+            "map5095": coco[0] if coco else None,
+        }
+        for name, value in values.items():
+            if value is not None and float(value) > best[name]:
+                best[name] = float(value)
+                best_epoch[name] = epoch
+        if values["f1"] is not None:
+            stage = "stage2" if epoch >= stop_epoch else "stage1"
+            stage_f1[stage] = max(stage_f1[stage], float(values["f1"]))
+    return best, best_epoch, stage_f1
+
+
 class DetSolver(BaseSolver):
     def fit(self):
         self.train()
@@ -36,10 +68,11 @@ class DetSolver(BaseSolver):
         n_parameters, model_stats = stats(self.cfg)
         print(model_stats)
         print("-" * 42 + "Start training" + "-" * 43)
-        top1 = 0
-        best_stat = {
-            "epoch": -1,
-        }
+        stop_epoch = self.train_dataloader.collate_fn.stop_epoch
+        log_path = self.output_dir / "log.txt" if self.output_dir else None
+        best, best_epoch, stage_f1 = _restore_best_metrics(
+            log_path if self.last_epoch > 0 else None, stop_epoch
+        )
         if self.last_epoch > 0:
             module = self.ema.module if self.ema else self.model
             test_stats, coco_evaluator = evaluate(
@@ -50,15 +83,22 @@ class DetSolver(BaseSolver):
                 self.evaluator,
                 self.device,
                 self.last_epoch,
-                self.use_wandb
+                self.use_wandb,
+                return_detection_metrics=True,
             )
-            for k in test_stats:
-                best_stat["epoch"] = self.last_epoch
-                best_stat[k] = test_stats[k][0]
-                top1 = test_stats[k][0]
-                print(f"best_stat: {best_stat}")
+            resume_values = {
+                "f1": float(test_stats["detection_metrics"]["f1"]),
+                "map50": float(test_stats["coco_eval_bbox"][1]),
+                "map5095": float(test_stats["coco_eval_bbox"][0]),
+            }
+            for name, value in resume_values.items():
+                if value > best[name]:
+                    best[name] = value
+                    best_epoch[name] = self.last_epoch
+            stage = "stage2" if self.last_epoch >= stop_epoch else "stage1"
+            stage_f1[stage] = max(stage_f1[stage], resume_values["f1"])
 
-        best_stat_print = best_stat.copy()
+        print(f"Restored best metrics: {best} at epochs {best_epoch}")
         start_time = time.time()
         start_epoch = self.last_epoch + 1
         for epoch in range(start_epoch, args.epochs):
@@ -66,12 +106,6 @@ class DetSolver(BaseSolver):
             # self.train_dataloader.dataset.set_epoch(epoch)
             if dist_utils.is_dist_available_and_initialized():
                 self.train_dataloader.sampler.set_epoch(epoch)
-
-            if epoch == self.train_dataloader.collate_fn.stop_epoch:
-                self.load_resume_state(str(self.output_dir / "best_stg1.pth"))
-                if self.ema:
-                    self.ema.decay = self.train_dataloader.collate_fn.ema_restart_decay
-                    print(f"Refresh EMA at epoch {epoch} with decay {self.ema.decay}")
 
             train_stats = train_one_epoch(
                 self.model,
@@ -96,9 +130,10 @@ class DetSolver(BaseSolver):
 
             self.last_epoch += 1
 
-            if self.output_dir and epoch < self.train_dataloader.collate_fn.stop_epoch:
+            # last.pth and periodic checkpoints are passive snapshots. They are
+            # saved throughout both stages and never change the training path.
+            if self.output_dir:
                 checkpoint_paths = [self.output_dir / "last.pth"]
-                # extra checkpoint before LR drop and every 100 epochs
                 if (epoch + 1) % args.checkpoint_freq == 0:
                     checkpoint_paths.append(self.output_dir / f"checkpoint{epoch:04}.pth")
                 for checkpoint_path in checkpoint_paths:
@@ -115,60 +150,47 @@ class DetSolver(BaseSolver):
                 epoch,
                 self.use_wandb,
                 output_dir=self.output_dir,
+                return_detection_metrics=True,
             )
 
-            # TODO
-            for k in test_stats:
-                if self.writer and dist_utils.is_main_process():
-                    for i, v in enumerate(test_stats[k]):
-                        self.writer.add_scalar(f"Test/{k}_{i}".format(k), v, epoch)
+            coco_stats = test_stats["coco_eval_bbox"]
+            current = {
+                "f1": float(test_stats["detection_metrics"]["f1"]),
+                "map50": float(coco_stats[1]),
+                "map5095": float(coco_stats[0]),
+            }
 
-                if k in best_stat:
-                    best_stat["epoch"] = (
-                        epoch if test_stats[k][0] > best_stat[k] else best_stat["epoch"]
-                    )
-                    best_stat[k] = max(best_stat[k], test_stats[k][0])
-                else:
-                    best_stat["epoch"] = epoch
-                    best_stat[k] = test_stats[k][0]
+            if self.writer and dist_utils.is_main_process():
+                for i, value in enumerate(coco_stats):
+                    self.writer.add_scalar(f"Test/coco_eval_bbox_{i}", value, epoch)
 
-                if best_stat[k] > top1:
-                    best_stat_print["epoch"] = epoch
-                    top1 = best_stat[k]
+            checkpoint_names = {
+                "f1": "best_f1_fixed.pth",
+                "map50": "best_map50.pth",
+                "map5095": "best_map5095.pth",
+            }
+            for name, value in current.items():
+                if value > best[name]:
+                    best[name] = value
+                    best_epoch[name] = epoch
                     if self.output_dir:
-                        if epoch >= self.train_dataloader.collate_fn.stop_epoch:
-                            dist_utils.save_on_master(
-                                self.state_dict(), self.output_dir / "best_stg2.pth"
-                            )
-                        else:
-                            dist_utils.save_on_master(
-                                self.state_dict(), self.output_dir / "best_stg1.pth"
-                            )
-
-                best_stat_print[k] = max(best_stat[k], top1)
-                print(f"best_stat: {best_stat_print}")  # global best
-
-                if best_stat["epoch"] == epoch and self.output_dir:
-                    if epoch >= self.train_dataloader.collate_fn.stop_epoch:
-                        if test_stats[k][0] > top1:
-                            top1 = test_stats[k][0]
-                            dist_utils.save_on_master(
-                                self.state_dict(), self.output_dir / "best_stg2.pth"
-                            )
-                    else:
-                        top1 = max(test_stats[k][0], top1)
                         dist_utils.save_on_master(
-                            self.state_dict(), self.output_dir / "best_stg1.pth"
+                            self.state_dict(), self.output_dir / checkpoint_names[name]
                         )
 
-                elif epoch >= self.train_dataloader.collate_fn.stop_epoch:
-                    best_stat = {
-                        "epoch": -1,
-                    }
-                    if self.ema:
-                        self.ema.decay -= 0.0001
-                        self.load_resume_state(str(self.output_dir / "best_stg1.pth"))
-                        print(f"Refresh EMA at epoch {epoch} with decay {self.ema.decay}")
+            stage = "stage2" if epoch >= stop_epoch else "stage1"
+            if current["f1"] > stage_f1[stage]:
+                stage_f1[stage] = current["f1"]
+                if self.output_dir:
+                    stage_name = "best_stg2.pth" if stage == "stage2" else "best_stg1.pth"
+                    dist_utils.save_on_master(self.state_dict(), self.output_dir / stage_name)
+
+            print(
+                "best checkpoints: "
+                f"F1={best['f1']:.5f} (epoch {best_epoch['f1']}), "
+                f"mAP50={best['map50']:.5f} (epoch {best_epoch['map50']}), "
+                f"mAP50:95={best['map5095']:.5f} (epoch {best_epoch['map5095']})"
+            )
 
             log_stats = {
                 **{f"train_{k}": v for k, v in train_stats.items()},
@@ -187,6 +209,26 @@ class DetSolver(BaseSolver):
             if self.output_dir and dist_utils.is_main_process():
                 with (self.output_dir / "log.txt").open("a") as f:
                     f.write(json.dumps(log_stats) + "\n")
+
+                checkpoint_summary = {
+                    "selection_rules": {
+                        "best_f1_fixed.pth": "maximum validation F1 at confidence=0.5 and IoU=0.5",
+                        "best_map50.pth": "maximum validation COCO AP at IoU=0.5",
+                        "best_map5095.pth": "maximum validation COCO AP averaged over IoU=0.5:0.95",
+                    },
+                    "best": {
+                        name: {"value": value, "epoch": best_epoch[name]}
+                        for name, value in best.items()
+                    },
+                    "stage_f1": {
+                        name: (None if value == float("-inf") else value)
+                        for name, value in stage_f1.items()
+                    },
+                }
+                (self.output_dir / "best_checkpoint_metrics.json").write_text(
+                    json.dumps(checkpoint_summary, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
 
                 # for evaluation logs
                 if coco_evaluator is not None:

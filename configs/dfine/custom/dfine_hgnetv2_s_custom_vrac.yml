@@ -1,0 +1,40 @@
+__include__: [
+  './dfine_hgnetv2_s_custom.yml',
+]
+
+# D-FINE-S with Visible-Ratio-Aware Cropping (VRAC).
+# Keep dfine_hgnetv2_s_custom.yml unchanged as the paper baseline.
+output_dir: ./output/dfine_hgnetv2_s_custom_vrac
+
+train_dataloader:
+  dataset:
+    transforms:
+      ops:
+        # Mild radiometric changes without physically implausible RGB-channel
+        # permutation.
+        - {type: RemoteSensingColorJitter, brightness: 0.15, contrast: 0.2, saturation: 0.15, hue: 0.02, p: 0.5}
+        # Mild degradation for tile sharpness, atmospheric clarity and
+        # compression/imaging noise.
+        - {type: RemoteSensingGaussianBlur, kernel_size: 3, sigma: [0.1, 1.2], p: 0.2}
+        - {type: RemoteSensingGaussianNoise, std: 0.02, p: 0.2}
+        # The stock side_range=(1, 4) and black fill are too strong for
+        # kilometre-scale thermal-power-plant targets.
+        - {type: RandomZoomOut, fill: 114, side_range: [1.0, 1.5], p: 0.3}
+        # Preserve at least 70% of every object. Protect boxes that already
+        # touch a tile boundary from being cropped a second time.
+        - {type: VisibleRatioAwareCrop, p: 0.3, min_visible_ratio: 0.7, min_scale: 0.7, max_scale: 1.0, trials: 40, protect_edge_boxes: True, edge_margin: 2.0}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip, p: 0.5}
+        - {type: RandomVerticalFlip, p: 0.5}
+        - {type: Resize, size: [640, 640]}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+      policy:
+        name: stop_epoch
+        epoch: 200
+        ops: ['RemoteSensingColorJitter', 'RemoteSensingGaussianBlur', 'RemoteSensingGaussianNoise', 'RandomZoomOut', 'VisibleRatioAwareCrop']
+  collate_fn:
+    # The source tiles contain 512-pixel native information. Keep the first
+    # experiment fixed at 640 and study multi-scale training separately.
+    base_size_repeat: ~

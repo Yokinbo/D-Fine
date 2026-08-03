@@ -22,8 +22,15 @@ __all__ = [
 INCLUDE_KEY = "__include__"
 
 
-def load_config(file_path, cfg=dict()):
+def load_config(file_path, cfg=None):
     """load config"""
+    # Do not use a mutable dictionary as a default argument.  A fresh load must
+    # not inherit values from a previous configuration load in the same
+    # process; otherwise user-provided overrides can be silently replaced by
+    # values from an included YAML file.
+    if cfg is None:
+        cfg = {}
+
     _, ext = os.path.splitext(file_path)
     assert ext in [".yml", ".yaml"], "only support yaml files"
 

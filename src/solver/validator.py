@@ -38,6 +38,56 @@ class Validator:
             metrics.pop("extended_metrics", None)
         return metrics
 
+    def compute_confidence_curve(
+        self, thresholds: np.ndarray | None = None
+    ) -> Dict[str, object]:
+        """Evaluate P/R/F1 across confidence thresholds and return max-F1 point.
+
+        This is intended for standalone validation, not every training epoch.
+        Matching keeps the same IoU rule as ``compute_metrics`` so the reported
+        recommended confidence is directly comparable with the fixed-threshold
+        D-FINE metrics.
+        """
+        if thresholds is None:
+            thresholds = np.linspace(0.0, 1.0, 101)
+
+        curve = []
+        for threshold in np.asarray(thresholds, dtype=float):
+            filtered_preds = filter_preds(copy.deepcopy(self.preds), float(threshold))
+            metrics = self._compute_main_metrics(filtered_preds)
+            curve.append(
+                {
+                    "confidence": float(threshold),
+                    "precision": float(metrics["precision"]),
+                    "recall": float(metrics["recall"]),
+                    "f1": float(metrics["f1"]),
+                    "TPs": int(metrics["TPs"]),
+                    "FPs": int(metrics["FPs"]),
+                    "FNs": int(metrics["FNs"]),
+                }
+            )
+
+        # Match Ultralytics/YOLO model validation: smooth 10% of the F1 curve
+        # before selecting the recommended operating point.
+        f1_values = np.asarray([item["f1"] for item in curve], dtype=float)
+        filter_size = round(len(f1_values) * 0.1 * 2) // 2 + 1
+        padding = np.ones(filter_size // 2)
+        padded = np.concatenate(
+            (padding * f1_values[0], f1_values, padding * f1_values[-1]), axis=0
+        )
+        smoothed_f1 = np.convolve(
+            padded, np.ones(filter_size) / filter_size, mode="valid"
+        )
+        best_index = int(smoothed_f1.argmax())
+        best = curve[best_index]
+        return {
+            "iou_threshold": float(self.iou_thresh),
+            "selection_rule": "maximum 10%-smoothed F1-confidence curve",
+            "recommended_confidence": float(best["confidence"]),
+            "best_f1_metrics": best.copy(),
+            "curve": curve,
+        }
+
     def _compute_main_metrics(self, preds):
         (
             self.metrics_per_class,

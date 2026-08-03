@@ -13,9 +13,14 @@ from ._transforms import (
     RandomHorizontalFlip,
     RandomIoUCrop,
     RandomPhotometricDistort,
+    RandomVerticalFlip,
     RandomZoomOut,
+    RemoteSensingColorJitter,
+    RemoteSensingGaussianBlur,
+    RemoteSensingGaussianNoise,
     Resize,
     SanitizeBoundingBoxes,
+    VisibleRatioAwareCrop,
 )
 from .container import Compose
 from .mosaic import Mosaic

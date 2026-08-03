@@ -127,7 +127,11 @@ def train_one_epoch(
             print(loss_dict_reduced)
             sys.exit(1)
 
-        metric_logger.update(loss=loss_value, **loss_dict_reduced)
+        # The criterion returns many auxiliary losses.  They are useful for
+        # debugging a new model, but make ordinary training logs unreadable.
+        # Keep the complete set in TensorBoard below while showing only the
+        # total optimization loss in the terminal.
+        metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
         if writer and dist_utils.is_main_process() and global_step % 10 == 0:
@@ -230,12 +234,18 @@ def evaluate(
             )
 
     # Conf matrix, F1, Precision, Recall, box IoU
-    metrics = Validator(gt, preds).compute_metrics()
-    print("Metrics:", metrics)
+    validator = Validator(gt, preds)
+    detection_metrics = validator.compute_metrics()
+    confidence_metrics = (
+        validator.compute_confidence_curve()
+        if kwargs.get("return_confidence_metrics", False)
+        else None
+    )
+    print("Metrics:", detection_metrics)
     if use_wandb:
-        metrics = {f"metrics/{k}": v for k, v in metrics.items()}
-        metrics["epoch"] = epoch
-        wandb.log(metrics)
+        wandb_metrics = {f"metrics/{k}": v for k, v in detection_metrics.items()}
+        wandb_metrics["epoch"] = epoch
+        wandb.log(wandb_metrics)
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
@@ -250,6 +260,10 @@ def evaluate(
 
     stats = {}
     # stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    if kwargs.get("return_detection_metrics", False):
+        stats["detection_metrics"] = detection_metrics
+    if confidence_metrics is not None:
+        stats["confidence_metrics"] = confidence_metrics
     if coco_evaluator is not None:
         if "bbox" in iou_types:
             stats["coco_eval_bbox"] = coco_evaluator.coco_eval["bbox"].stats.tolist()
