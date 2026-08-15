@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 # Supported values: "s" and "m". Model YAML and official pretrained weights
 # follow this selection; experiment input/output paths do not.
 MODEL_SIZE = "m"
-
+MODEL_IMAGE_SIZE = 512
 # The custom VRAC YAML currently exists only for D-FINE-S. Keep this True for
 # the S innovation experiment. Switching MODEL_SIZE to "m" automatically uses
 # the ordinary M config instead of an incompatible VRAC config.
@@ -22,7 +22,7 @@ USE_VRAC_AUGMENTATION = ENABLE_VRAC_FOR_S and MODEL_SIZE.lower() == "s"
 
 # Network input size after preprocessing. Large-raster tile sizes may differ;
 # every tile is resized to this size before it is passed to D-FINE.
-MODEL_IMAGE_SIZE = 640
+
 
 MODEL_CONFIG_PATHS = {
     "s": REPO_ROOT / "configs" / "dfine" / "custom" / "dfine_hgnetv2_s_custom.yml",

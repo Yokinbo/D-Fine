@@ -7,10 +7,12 @@
 输出 COCO 检测指标，并在 VALID_OUTPUT_DIR 保存 metrics.json 和 eval.pth。
 """
 
+import copy
 import csv
 import json
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 
 # PyTorch 2.1 imports Transformers indirectly for ONNX helpers. D-FINE does
@@ -18,6 +20,11 @@ from pathlib import Path
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
 import torch
+
+try:
+    from calflops import calculate_flops
+except ImportError:
+    calculate_flops = None
 
 from experiment_config import (
     MODEL_IMAGE_SIZE,
@@ -38,7 +45,7 @@ CONFIG_PATH = str(selected_model_config_path())
 
 # 应用验证默认使用 mAP@0.5 最优的 best_map50.pth。也可改为
 # best_map5095.pth、best_f1_fixed.pth 或 best_stg2.pth 进行同口径对比。
-CHECKPOINT_PATH = r"E:\YOLO\D-FINE\output\火电_D-FINE-M_baseline_240轮\best_map50.pth"
+CHECKPOINT_PATH = r"G:\b\8月13模型权重结果\six_s_640_200epoch\best_map50.pth"
 
 # 验证影像目录和对应的 COCO JSON 标注文件。先运行 myscript/yolo2coco.py。
 VAL_IMAGES_DIR = Path(r"E:\YOLO\D-FINE\datasets\mydatasets\val\images")
@@ -47,21 +54,25 @@ NUM_CLASSES = 1
 
 # 必须与训练时的模型输入尺寸保持一致。
 INPUT_SIZE = MODEL_IMAGE_SIZE
-VAL_BATCH_SIZE = 4
+VAL_BATCH_SIZE = 6
 NUM_WORKERS = 2
 DEVICE = "cuda"
 SEED = 2026
 
 # 验证结果保存到单独目录，不覆盖训练过程中的输出文件。
-VALID_OUTPUT_DIR = r"E:\YOLO\D-FINE\output\火电_D-FINE-M_baseline_240轮\best_map50.pth验证结果"
-# 验证报告 TXT 的绝对路径。运行后会同时保留 JSON（便于程序读取）和 TXT（便于论文整理）。
-METRICS_TXT_PATH = r"E:\YOLO\D-FINE\output\火电_D-FINE-M_baseline_240轮\best_map50.pth验证结果\精度指标报告.txt"
+VALID_OUTPUT_DIR = r"G:\b\8月13精度对比测试可删\s-640_200验证集精度指标"
+
+# 只控制“论文指标.txt”中的显示名称，不参与模型结构或权重加载。
+PAPER_MODEL_NAME = "dfine-s-640_200"
 
 # 速度测试：单张 640×640 输入，先预热再重复计时。计时包含模型前向和检测后处理，
 # 不含磁盘读取及 DataLoader 的图像变换，避免硬盘速度影响模型 FPS。
 ENABLE_FPS_BENCHMARK = True
+EFFICIENCY_CONFIDENCE = 0.50
 FPS_WARMUP_ITERS = 10
 FPS_TEST_ITERS = 100
+
+
 # =============================================================================
 
 
@@ -81,8 +92,16 @@ COCO_METRIC_NAMES = [
 ]
 
 
+def format_elapsed_time(seconds: float) -> str:
+    """将秒数格式化为 HH:MM:SS。"""
+    total_seconds = int(round(seconds))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
 def benchmark_single_image_fps(model, postprocessor, data_loader, device: torch.device) -> dict:
-    """Measure one-image forward + postprocess speed on an actual validation sample."""
+    """Measure batch-1 forward + postprocess + confidence filtering speed."""
     samples, targets = next(iter(data_loader))
     samples = samples[:1].to(device)
     target = {
@@ -91,6 +110,15 @@ def benchmark_single_image_fps(model, postprocessor, data_loader, device: torch.
     }
     orig_target_sizes = target["orig_size"].reshape(1, 2)
 
+    def postprocess_at_efficiency_confidence(outputs):
+        results = postprocessor(outputs, orig_target_sizes)
+        for result in results:
+            keep = result["scores"] >= EFFICIENCY_CONFIDENCE
+            result["scores"] = result["scores"][keep]
+            result["labels"] = result["labels"][keep]
+            result["boxes"] = result["boxes"][keep]
+        return results
+
     def synchronize() -> None:
         if device.type == "cuda":
             torch.cuda.synchronize(device)
@@ -98,12 +126,12 @@ def benchmark_single_image_fps(model, postprocessor, data_loader, device: torch.
     with torch.inference_mode():
         for _ in range(FPS_WARMUP_ITERS):
             outputs = model(samples)
-            postprocessor(outputs, orig_target_sizes)
+            postprocess_at_efficiency_confidence(outputs)
         synchronize()
         start = time.perf_counter()
         for _ in range(FPS_TEST_ITERS):
             outputs = model(samples)
-            postprocessor(outputs, orig_target_sizes)
+            postprocess_at_efficiency_confidence(outputs)
         synchronize()
     seconds_per_image = (time.perf_counter() - start) / FPS_TEST_ITERS
     return {
@@ -111,7 +139,27 @@ def benchmark_single_image_fps(model, postprocessor, data_loader, device: torch.
         "latency_ms_single_image_forward_post": seconds_per_image * 1000.0,
         "warmup_iterations": FPS_WARMUP_ITERS,
         "test_iterations": FPS_TEST_ITERS,
+        "efficiency_confidence": EFFICIENCY_CONFIDENCE,
     }
+
+
+def calculate_model_flops(model) -> float:
+    """使用 D-FINE 官方 calflops 口径统计 batch=1、当前输入尺寸的 GFLOPs。"""
+    if calculate_flops is None:
+        return 0.0
+
+    profile_model = copy.deepcopy(dist_utils.de_parallel(model)).cpu().eval()
+    if hasattr(profile_model, "deploy"):
+        profile_model = profile_model.deploy()
+    flops, _, _ = calculate_flops(
+        model=profile_model,
+        input_shape=(1, 3, INPUT_SIZE, INPUT_SIZE),
+        print_results=False,
+        print_detailed=False,
+        output_as_string=False,
+    )
+    del profile_model
+    return float(flops) / 1e9
 
 
 def save_confidence_curve_outputs(result_dir: Path, confidence_metrics: dict) -> None:
@@ -155,6 +203,68 @@ def save_confidence_curve_outputs(result_dir: Path, confidence_metrics: dict) ->
     plt.close(figure)
 
 
+def save_paper_metrics(
+    result_dir: Path,
+    coco_metrics: dict,
+    threshold_metrics: dict,
+    speed_metrics: dict,
+    model_params: int,
+    flops_g: float,
+) -> Path:
+    """生成可直接复制到论文或表格软件中的精度表和效率表。"""
+    latency = speed_metrics.get("latency_ms_single_image_forward_post")
+    fps = speed_metrics.get("FPS_single_image_forward_post")
+    flops_text = f"{flops_g:.3f}" if flops_g > 0 else "N/A"
+    latency_text = f"{latency:.4f}" if latency is not None else "N/A"
+    fps_text = f"{fps:.4f}" if fps is not None else "N/A"
+
+    accuracy_header = (
+        f"{'Model':<16}{'Input':>8}{'Params(M)':>14}{'AP50':>12}{'AP75':>12}"
+        f"{'mAP50:95':>14}{'P@0.5':>12}{'R@0.5':>12}{'F1@0.5':>12}"
+    )
+    accuracy_row = (
+        f"{PAPER_MODEL_NAME:<16}{INPUT_SIZE:>8}{model_params / 1e6:>14.3f}"
+        f"{coco_metrics['AP@0.5']:>12.4f}{coco_metrics['AP@0.75']:>12.4f}"
+        f"{coco_metrics['mAP@0.5:0.95']:>14.4f}"
+        f"{threshold_metrics['precision']:>12.4f}{threshold_metrics['recall']:>12.4f}"
+        f"{threshold_metrics['f1']:>12.4f}"
+    )
+    efficiency_header = (
+        f"{'Model':<16}{'Input':>8}{'Params(M)':>14}{'FLOPs(G)':>14}"
+        f"{'Latency(ms/image)':>22}{'FPS':>14}"
+    )
+    efficiency_row = (
+        f"{PAPER_MODEL_NAME:<16}{INPUT_SIZE:>8}{model_params / 1e6:>14.3f}"
+        f"{flops_text:>14}{latency_text:>22}{fps_text:>14}"
+    )
+
+    lines = [
+        "D-FINE 论文对比实验指标",
+        "=" * 104,
+        "一、精度对比表",
+        accuracy_header,
+        "-" * len(accuracy_header),
+        accuracy_row,
+        "",
+        "二、效率对比表",
+        efficiency_header,
+        "-" * len(efficiency_header),
+        efficiency_row,
+        "",
+        "评价口径：",
+        "1. P@0.5、R@0.5、F1@0.5：置信度≥0.50，匹配IoU≥0.50。",
+        "2. AP50、AP75、mAP50:95：COCO标准检测评价。",
+        f"3. FLOPs：D-FINE官方calflops部署图口径，batch=1，输入{INPUT_SIZE}×{INPUT_SIZE}。",
+        f"4. Latency与FPS：batch=1，置信度={EFFICIENCY_CONFIDENCE:.2f}，模型前向+检测后处理。",
+        f"5. 测速：预热{FPS_WARMUP_ITERS}次，正式测试{FPS_TEST_ITERS}次，不含磁盘读取和DataLoader变换。",
+        "",
+        "制表提示：以上列使用固定宽度排版；也可按列复制到 Word 或 Excel。",
+    ]
+    path = result_dir / "论文指标.txt"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
 def write_metrics_txt(
     path: Path,
     coco_metrics: dict,
@@ -162,6 +272,9 @@ def write_metrics_txt(
     confidence_metrics: dict,
     speed_metrics: dict,
     model_params: int,
+    flops_g: float,
+    started_at: datetime,
+    elapsed_seconds: float,
 ) -> None:
     """Write a human-readable report including the metric definitions used in the paper."""
     lines = [
@@ -196,6 +309,10 @@ def write_metrics_txt(
             "",
             "四、效率参考指标",
             f"模型参数量 (M)                 : {model_params / 1e6:.3f}",
+            f"FLOPs (G)                       : {flops_g:.3f}"
+            if flops_g > 0
+            else "FLOPs (G)                       : N/A（未安装 calflops）",
+            f"效率测试置信度                  : {EFFICIENCY_CONFIDENCE:.2f}",
         ]
     )
     lines.extend(f"{name:30s}: {value:.4f}" for name, value in speed_metrics.items())
@@ -215,6 +332,12 @@ def write_metrics_txt(
             "",
             "速度说明：本报告 FPS 为单张图像的“模型前向 + 检测后处理”速度，不含磁盘读取和 DataLoader 变换。",
             "若与其他论文比较 FPS，必须保持显卡、PyTorch/CUDA、输入尺寸、批量大小和计时范围一致。",
+            "",
+            "六、验证耗时",
+            f"开始时间：{started_at.isoformat(timespec='seconds')}",
+            f"结束时间：{datetime.now().astimezone().isoformat(timespec='seconds')}",
+            f"总耗时：{format_elapsed_time(elapsed_seconds)}",
+            f"总秒数：{elapsed_seconds:.2f}",
         ]
     )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -267,12 +390,16 @@ def validate_paths() -> None:
         raise ValueError("VAL_BATCH_SIZE 必须大于 0。")
     if FPS_WARMUP_ITERS < 0 or FPS_TEST_ITERS <= 0:
         raise ValueError("FPS_WARMUP_ITERS 必须≥0，FPS_TEST_ITERS 必须>0。")
+    if not 0 <= EFFICIENCY_CONFIDENCE <= 1:
+        raise ValueError("EFFICIENCY_CONFIDENCE 必须在 [0, 1] 范围内。")
     if DEVICE.startswith("cuda") and not torch.cuda.is_available():
         raise RuntimeError("DEVICE 设置为 cuda，但当前没有可用 CUDA 显卡。")
 
 
 def main() -> None:
     validate_paths()
+    started_at = datetime.now().astimezone()
+    start_time = time.perf_counter()
     print("\n========== 火电厂目标检测验证 ==========")
     print(f"共享模型选择: {MODEL_TAG}")
     print(f"模型配置: {CONFIG_PATH}")
@@ -294,6 +421,8 @@ def main() -> None:
     # eval() 会加载 CHECKPOINT_PATH 中完整的 model 与 EMA 状态。
     solver.eval()
     model = solver.ema.module if solver.ema else solver.model
+    # 使用模型副本计算FLOPs，不改变已加载权重及后续正式验证模型。
+    flops_g = calculate_model_flops(model)
     stats, coco_evaluator = evaluate(
         model=model,
         criterion=solver.criterion,
@@ -318,6 +447,7 @@ def main() -> None:
         if ENABLE_FPS_BENCHMARK
         else {}
     )
+    elapsed_seconds = time.perf_counter() - start_time
     print("\n========== 最终验证结果 ==========")
     for name, value in coco_metrics.items():
         print(f"{name:16s}: {value:.4f}")
@@ -336,8 +466,10 @@ def main() -> None:
     )
     print("\n========== 论文速度 / 规模参考指标 ==========")
     print(f"模型参数量 (M)    : {model_params / 1e6:.3f}")
+    print(f"FLOPs (G)         : {flops_g:.3f}" if flops_g > 0 else "FLOPs (G)         : N/A")
     for name, value in speed_metrics.items():
         print(f"{name:30s}: {value:.4f}")
+    print(f"验证总耗时          : {format_elapsed_time(elapsed_seconds)}")
 
     result_dir = Path(VALID_OUTPUT_DIR)
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -355,6 +487,9 @@ def main() -> None:
                 "confidence_metrics": confidence_metrics,
                 "speed_metrics": speed_metrics,
                 "model_parameters": model_params,
+                "FLOPs_G": flops_g if flops_g > 0 else None,
+                "efficiency_confidence": EFFICIENCY_CONFIDENCE,
+                "validation_elapsed_seconds": elapsed_seconds,
             },
             ensure_ascii=False,
             indent=2,
@@ -362,7 +497,15 @@ def main() -> None:
         encoding="utf-8",
     )
     save_confidence_curve_outputs(result_dir, confidence_metrics)
-    txt_path = Path(METRICS_TXT_PATH)
+    paper_path = save_paper_metrics(
+        result_dir,
+        coco_metrics,
+        threshold_metrics,
+        speed_metrics,
+        model_params,
+        flops_g,
+    )
+    txt_path = result_dir / "精度指标报告.txt"
     write_metrics_txt(
         txt_path,
         coco_metrics,
@@ -370,10 +513,14 @@ def main() -> None:
         confidence_metrics,
         speed_metrics,
         model_params,
+        flops_g,
+        started_at,
+        elapsed_seconds,
     )
     torch.save(coco_evaluator.coco_eval["bbox"].eval, result_dir / "eval.pth")
     print(f"\n指标已保存：{result_dir / 'metrics.json'}")
     print(f"TXT 精度报告已保存：{txt_path}")
+    print(f"论文指标已保存：{paper_path}")
     print(f"COCO 评估对象已保存：{result_dir / 'eval.pth'}")
     dist_utils.cleanup()
 

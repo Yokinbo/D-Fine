@@ -54,7 +54,7 @@ from experiment_config import (
 # =============================================================================
 
 # 待检测的灵武市/镇级/县级 RGB GeoTIFF 绝对路径。
-INPUT_TIF = r"F:\3能源金三角基础设施识别\金三角1.88米tif\榆林市\神木市\镇级tif影像\大保当镇\大保当镇1.86米tif\Level16\大保当镇1.86.tif"
+INPUT_TIF = r"G:\金三角tif影像\宁夏\银川市\灵武市1.88m\Level16\灵武市1.88m.tif"
 
 # 由 experiment_config.py 的 MODEL_SIZE 自动选择 S/M 结构。
 MODEL_CONFIG = str(selected_model_config_path())
@@ -63,18 +63,24 @@ MODEL_CONFIG = str(selected_model_config_path())
 NUM_CLASSES = 1
 
 # 建议填写经过 valid.py 比较后确定的最佳正式训练权重。
-CHECKPOINT = r"E:\YOLO\D-FINE\output\火电_D-FINE-M_baseline_240轮\best_map50.pth"
+CHECKPOINT = r"G:\b\8月13模型权重结果\six_m_512_200epoch\best_map50.pth"
 
 # 本次正式应用的独立输出目录。
-OUTPUT_DIR = r"F:\3能源金三角基础设施识别\金三角1.88米tif\榆林市\神木市\镇级tif影像\大保当镇\D-FINE-M_best_map50_置信度0.20推理结果"
+OUTPUT_DIR = r"G:\b\8月13精度对比测试可删\大图推理效果\m-512_200"
 
-DEVICE = "cuda:0"
-USE_AMP = True
-BATCH_SIZE = 4
+# Shapefile 输出文件名：只填写文件名并保留 .shp 后缀，文件仍保存到 OUTPUT_DIR。
+SHP_OUTPUT_NAME = "m-512_200灵武市-置信度0.5.shp"
 
 # 最终制图置信度：先填写 valid.py 报告的最佳 F1 置信度，再根据
 # 真实大图上的误检/漏检人工调整。也可用 --confidence 临时覆盖。
-FINAL_CONFIDENCE = 0.20
+FINAL_CONFIDENCE = 0.5
+
+
+DEVICE = "cuda:0"
+USE_AMP = True
+BATCH_SIZE = 6
+
+
 
 # 跨重叠窗口/复检视图的支持次数。1 表示关闭此过滤；应用场景可尝试改为 4。
 # 支持次数越高，候选框越稳定，但过高可能漏掉边缘或只被少数窗口覆盖的目标。
@@ -144,6 +150,7 @@ def apply_application_config(core: ModuleType, input_tif: str, checkpoint: str) 
     core.FUSION_IOU = FUSION_IOU
     core.WRITE_GPKG = WRITE_GPKG
     core.WRITE_SHP = WRITE_SHP
+    core.SHP_OUTPUT_NAME = SHP_OUTPUT_NAME
     core.WRITE_PREVIEW = WRITE_PREVIEW
     core.PREVIEW_MAX_SIZE = PREVIEW_MAX_SIZE
 
@@ -178,6 +185,8 @@ def validate_paths(core: ModuleType, input_tif: str, checkpoint: str) -> None:
         raise ValueError("MODEL_IMAGE_SIZE 必须是能被 32 整除的正整数。")
     if not 0.0 <= FINAL_CONFIDENCE <= 1.0:
         raise ValueError("FINAL_CONFIDENCE 必须在 [0, 1] 范围内。")
+    if Path(SHP_OUTPUT_NAME).name != SHP_OUTPUT_NAME or Path(SHP_OUTPUT_NAME).suffix.lower() != ".shp":
+        raise ValueError("SHP_OUTPUT_NAME 只能填写文件名，且必须保留 .shp 后缀。")
 
 
 def synchronize_cuda(core: ModuleType, device: Any) -> None:

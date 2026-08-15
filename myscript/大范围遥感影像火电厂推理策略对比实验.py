@@ -150,6 +150,8 @@ VALID_AREA_KM2 = 0.0
 # 输出选项。GeoJSON 和 CSV 始终可写；GPKG/SHP 需要 geopandas。
 WRITE_GPKG = True
 WRITE_SHP = False
+# 默认文件名；正式实用版会在运行时覆盖为其 SHP_OUTPUT_NAME 配置。
+SHP_OUTPUT_NAME = "predictions.shp"
 WRITE_PREVIEW = True
 PREVIEW_MAX_SIZE = 2200
 
@@ -321,6 +323,10 @@ class DFineInferenceModel(nn.Module):
             config_path,
             num_classes=NUM_CLASSES,
             remap_mscoco_category=False,
+            # Keep deploy anchors consistent with the trained checkpoint.
+            # The formal application script synchronizes MODEL_INPUT_SIZE from
+            # experiment_config.py before calling load_model().
+            eval_spatial_size=[MODEL_INPUT_SIZE, MODEL_INPUT_SIZE],
         )
         if "HGNetv2" in cfg.yaml_cfg:
             cfg.yaml_cfg["HGNetv2"]["pretrained"] = False
@@ -1157,7 +1163,7 @@ def save_optional_geopandas_vectors(
         if WRITE_GPKG:
             frame.to_file(result_dir / "predictions.gpkg", layer="power_plants", driver="GPKG")
         if WRITE_SHP:
-            frame.to_file(result_dir / "predictions.shp", encoding="utf-8")
+            frame.to_file(result_dir / SHP_OUTPUT_NAME, encoding="utf-8")
     except Exception as error:
         print(f"[提示] GPKG/SHP 输出失败，但不影响其他结果: {error}")
 
