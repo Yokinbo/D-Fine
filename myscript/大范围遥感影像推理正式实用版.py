@@ -63,17 +63,17 @@ MODEL_CONFIG = str(selected_model_config_path())
 NUM_CLASSES = 1
 
 # 建议填写经过 valid.py 比较后确定的最佳正式训练权重。
-CHECKPOINT = r"G:\b\8月13模型权重结果\six_m_512_200epoch\best_map50.pth"
+CHECKPOINT = r"E:\YOLO\D-FINE\output\新版数据集m-512_200轮\best_map50.pth"
 
 # 本次正式应用的独立输出目录。
-OUTPUT_DIR = r"G:\b\8月13精度对比测试可删\大图推理效果\m-512_200"
+OUTPUT_DIR = r"G:\b\8月13与14精度对比测试可删\1\m-512_200"
 
 # Shapefile 输出文件名：只填写文件名并保留 .shp 后缀，文件仍保存到 OUTPUT_DIR。
-SHP_OUTPUT_NAME = "m-512_200灵武市-置信度0.5.shp"
+SHP_OUTPUT_NAME = "m-512_200灵武市-置信度0.2.shp"
 
 # 最终制图置信度：先填写 valid.py 报告的最佳 F1 置信度，再根据
 # 真实大图上的误检/漏检人工调整。也可用 --confidence 临时覆盖。
-FINAL_CONFIDENCE = 0.5
+FINAL_CONFIDENCE = 0.2
 
 
 DEVICE = "cuda:0"

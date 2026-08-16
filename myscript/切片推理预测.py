@@ -49,19 +49,19 @@ from src.core import YAMLConfig
 
 # 模型结构必须与训练权重一致。默认跟随 experiment_config.py 中的 S/M 设置。
 MODEL_CONFIG = selected_model_config_path()
-CHECKPOINT_PATH = Path(r"G:\b\8月13模型权重结果\six_m_512_200epoch\best_map50.pth")
+CHECKPOINT_PATH = Path(r"E:\YOLO\D-FINE\output\新版数据集m-512_100轮\best_map50.pth")
 NUM_CLASSES = 1
 
 # 待预测的小 TIFF 目录，支持递归读取子目录。
-INPUT_DIR = Path(r"F:\3能源金三角基础设施识别\火力发电厂\优化不同数据集版本\3_第三版_在2基础上添加部分删掉的数据集\训练集优化掉的图片与标签\金三角外_剔除不像\图片")
+INPUT_DIR = Path(r"E:\YOLO\D-FINE\datasets\mydatasets\test\images")
 
 # 对应的 YOLO 标签目录；只推理、不统计漏检误检时设为 None。
-LABEL_DIR: Path = Path(r"F:\3能源金三角基础设施识别\火力发电厂\优化不同数据集版本\3_第三版_在2基础上添加部分删掉的数据集\训练集优化掉的图片与标签\金三角外_剔除不像\标签")
+LABEL_DIR= Path(r"E:\YOLO\D-FINE\datasets\mydatasets\test\labels")
 #LABEL_DIR = None
 
-OUTPUT_DIR = Path(r"F:\2testkeshan\可删模型切片推测\1")
+OUTPUT_DIR = Path(r"F:\2testkeshan\可删模型切片推测\3")
 
-CONFIDENCE = 0.60
+CONFIDENCE = 0.50
 NMS_IOU = 0.70
 MATCH_IOU = 0.50  # 仅用于预测框与 YOLO 真值框匹配，统计 TP/FP/FN。
 DEVICE = "cuda:0"
@@ -295,18 +295,68 @@ def match_predictions(predictions: np.ndarray, targets: np.ndarray) -> tuple[int
     return true_positives, len(predictions) - true_positives, len(targets) - true_positives
 
 
-def save_preview(path: Path, rgb: np.ndarray, predictions: np.ndarray) -> None:
-    """保存带预测框、类别和置信度的预览 PNG。"""
+def save_preview(
+    path: Path,
+    rgb: np.ndarray,
+    predictions: np.ndarray,
+    targets: np.ndarray,
+) -> None:
+    """保存同时包含真值框（绿色）与预测框（红色）的预览 PNG。"""
     image = Image.fromarray(rgb, mode="RGB")
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
     line_width = max(2, round(max(image.size) / 320))
+
+    ground_truth_color = (0, 220, 80)
+    prediction_color = (255, 40, 40)
+
+    def draw_text_label(x: float, y: float, text: str, color: tuple[int, int, int]) -> None:
+        """绘制带深色底的标签，避免文字与遥感影像背景混在一起。"""
+        x = max(0.0, min(float(x), image.width - 1.0))
+        y = max(0.0, min(float(y), image.height - 1.0))
+        left, top, right, bottom = draw.textbbox((x, y), text, font=font)
+        padding = 2
+        background = (
+            max(0, left - padding),
+            max(0, top - padding),
+            min(image.width - 1, right + padding),
+            min(image.height - 1, bottom + padding),
+        )
+        draw.rectangle(background, fill=(0, 0, 0))
+        draw.text((x, y), text, fill=color, font=font)
+
+    # 真值框先画成稍粗的绿色框；当预测框与真值框高度重合时，外侧仍能看到绿色。
+    for class_id, x1, y1, x2, y2 in targets:
+        box = (float(x1), float(y1), float(x2), float(y2))
+        draw.rectangle(box, outline=ground_truth_color, width=line_width + 2)
+        class_text = CLASS_NAME if int(class_id) == 0 else str(int(class_id))
+        draw_text_label(float(x1), max(0.0, float(y1) - 14), f"GT {class_text}", ground_truth_color)
+
+    # 预测框使用红色，并在标签中显示置信度。
     for class_id, x1, y1, x2, y2, confidence in predictions:
         box = (float(x1), float(y1), float(x2), float(y2))
-        draw.rectangle(box, outline=(255, 0, 0), width=line_width)
-        text = f"{CLASS_NAME if int(class_id) == 0 else int(class_id)} {confidence:.2f}"
-        text_y = max(0.0, float(y1) - 12)
-        draw.text((float(x1), text_y), text, fill=(255, 0, 0), font=font)
+        draw.rectangle(box, outline=prediction_color, width=line_width)
+        class_text = CLASS_NAME if int(class_id) == 0 else str(int(class_id))
+        draw_text_label(
+            float(x1),
+            min(float(image.height - 12), max(0.0, float(y1) + 2)),
+            f"PRED {class_text} {confidence:.2f}",
+            prediction_color,
+        )
+
+    # 固定图例：即使某张图没有真值框或预测框，也能明确辨认颜色含义。
+    legend = "GT: GREEN   PRED: RED"
+    legend_box = draw.textbbox((6, 6), legend, font=font)
+    draw.rectangle(
+        (2, 2, legend_box[2] + 10, legend_box[3] + 10),
+        fill=(0, 0, 0),
+        outline=(255, 255, 255),
+        width=1,
+    )
+    draw.text((6, 6), "GT: GREEN", fill=ground_truth_color, font=font)
+    gt_width = draw.textlength("GT: GREEN   ", font=font)
+    draw.text((6 + gt_width, 6), "PRED: RED", fill=prediction_color, font=font)
+
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path)
 
@@ -370,7 +420,12 @@ def main() -> None:
             total_fp += fp
             total_fn += fn
 
-            save_preview((output_images / relative_path).with_suffix(".png"), rgb, predictions)
+            save_preview(
+                (output_images / relative_path).with_suffix(".png"),
+                rgb,
+                predictions,
+                targets,
+            )
             save_yolo_predictions(
                 (output_labels / relative_path).with_suffix(".txt"),
                 predictions,

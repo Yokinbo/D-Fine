@@ -54,14 +54,17 @@ INPUT_SIZE = MODEL_IMAGE_SIZE
 TRAIN_BATCH_SIZE = 6
 VAL_BATCH_SIZE = 6
 NUM_WORKERS = 2  # Windows 上建议 0~2；若 DataLoader 异常可改为 0
-EPOCHS = 240
+EPOCHS = 200
 # 前 180 轮使用颜色、模糊、噪声、外扩和 VRAC，最后 20 轮用干净样本稳定收敛。
-AUGMENTATION_STOP_EPOCH = 210
+AUGMENTATION_STOP_EPOCH = 180
 
-#EPOCHS和AUGMENTATION_STOP_EPOCH的关系：EPOCHS=200时，AUGMENTATION_STOP_EPOCH=180；
+#EPOCHS和AUGMENTATION_STOP_EPOCH的关系：                       EPOCHS=200时，AUGMENTATION_STOP_EPOCH=180；
 #EPOCHS=40时，AUGMENTATION_STOP_EPOCH=36；                      EPOCHS = 240
 #正式论文中应用EPOCHS=200、AUGMENTATION_STOP_EPOCH=180；         AUGMENTATION_STOP_EPOCH = 210
 #快速测试时应用EPOCHS=40、AUGMENTATION_STOP_EPOCH=36。
+
+# 训练结果输出目录：每次 S/M、基线/改进实验请直接填写独立绝对路径。
+OUTPUT_DIR = r"E:\YOLO\D-FINE\output\新版数据集m-512_200轮"
 
 SEED = 2026
 DEVICE = "cuda"
@@ -72,8 +75,7 @@ BASE_LR = 4e-4
 WEIGHT_DECAY = 1e-4
 PRINT_FREQ = 20
 CHECKPOINT_FREQ = 10
-# 训练结果输出目录：每次 S/M、基线/改进实验请直接填写独立绝对路径。
-OUTPUT_DIR = r"E:\YOLO\D-FINE\output\火电_D-FINE-M_baseline_240轮"
+
 
 # 由 experiment_config.py 按 S/M 自动选择 weight 目录中的 COCO 预训练权重。
 # 留空时仍会使用 HGNetv2 预训练骨干，但不是完整检测器预训练权重。
