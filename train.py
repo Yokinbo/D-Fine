@@ -25,9 +25,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import argparse
 
 from experiment_config import (
+    ACTIVE_IMPROVEMENT_MODE,
     MODEL_IMAGE_SIZE,
-    MODEL_SIZE,
+    MODEL_TAG,
     PRETRAINED_WEIGHT_PATH,
+    USE_QLCS,
     USE_VRAC_AUGMENTATION,
     selected_model_config_path,
 )
@@ -40,7 +42,8 @@ from src.solver import TASKS
 # =============================================================================
 # 推荐：RTX 4060 Laptop 8GB 优先使用 D-FINE-S。可选值为 "s"、"m"、"l"、"x"；
 # L/X 显存占用明显更高，切换后如显存不足，应优先减小训练批量。
-# S/M/L/X 模型规模及对四种规模通用的 VRAC 开关统一在 experiment_config.py 中设置。
+# S/M/L/X 规模及 VRAC 在 experiment_config.py 中设置；网络改进开关统一放在
+# my_improve/settings.py，训练、验证和测试会同步选择相同 YAML。
 
 # COCO 格式数据集：直接填写绝对路径。Windows 路径前请保留 r，避免反斜杠被转义。
 # 训练/验证数据的绝对路径。训练前先运行 myscript/yolo2coco.py 生成 JSON。
@@ -55,9 +58,9 @@ INPUT_SIZE = MODEL_IMAGE_SIZE
 TRAIN_BATCH_SIZE = 6
 VAL_BATCH_SIZE = 6
 NUM_WORKERS = 2  # Windows 上建议 0~2；若 DataLoader 异常可改为 0
-EPOCHS = 200
+EPOCHS = 150
 # 前 180 轮使用颜色、模糊、噪声、外扩和 VRAC，最后 20 轮用干净样本稳定收敛。
-AUGMENTATION_STOP_EPOCH = 180
+AUGMENTATION_STOP_EPOCH = 135
 
 #EPOCHS和AUGMENTATION_STOP_EPOCH的关系：                       EPOCHS=200时，AUGMENTATION_STOP_EPOCH=180；
 #EPOCHS=40时，AUGMENTATION_STOP_EPOCH=36；                      EPOCHS = 240
@@ -65,7 +68,7 @@ AUGMENTATION_STOP_EPOCH = 180
 #快速测试时应用EPOCHS=40、AUGMENTATION_STOP_EPOCH=36。
 
 # 训练结果输出目录：每次 S/M/L/X、基线/改进实验请填写独立绝对路径。
-OUTPUT_DIR = r"E:\YOLO\D-FINE\output\新版数据集m-512_200轮"
+OUTPUT_DIR = r"E:\YOLO\D-FINE\output\测试可删"
 
 SEED = 2026
 DEVICE = "cuda"
@@ -192,7 +195,12 @@ def validate_training_inputs(args) -> None:
 def print_user_config(args) -> None:
     """启动时先打印最常核对的参数，避免用错数据或权重。"""
     print("\n========== 火电厂目标检测训练参数 ==========")
-    print(f"模型: D-FINE-{MODEL_SIZE.upper()} | VRAC增强: {USE_VRAC_AUGMENTATION}")
+    print(f"模型: {MODEL_TAG}")
+    print(
+        f"QLCS模块: {'开启' if USE_QLCS else '关闭'} | "
+        f"网络改进模式: {ACTIVE_IMPROVEMENT_MODE} | "
+        f"VRAC增强: {'开启' if USE_VRAC_AUGMENTATION else '关闭'}"
+    )
     print(f"训练集: {TRAIN_IMAGES_DIR}")
     print(f"验证集: {VAL_IMAGES_DIR}")
     print(
@@ -388,7 +396,7 @@ if __name__ == "__main__":
     # priority 0
     parser.add_argument(
         "-c", "--config", type=str, default=str(default_config),
-        help="YAML config; direct execution uses MODEL_SIZE and USE_VRAC_AUGMENTATION",
+        help="YAML config; direct execution also follows experiment_config.py and my_improve/settings.py",
     )
     parser.add_argument(
         "-r", "--resume", type=str, default=str(RESUME_CHECKPOINT) or None,

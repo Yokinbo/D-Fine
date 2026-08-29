@@ -3,9 +3,16 @@
 只需修改 ``MODEL_SIZE``，train.py、valid.py 和 test.py 就会同步切换
 模型结构。训练脚本还会自动选择与该规模匹配的官方预训练权重。
 数据集路径、输出目录及待评估权重路径仍在各入口脚本中单独填写。
+论文网络改进的统一开关位于 ``my_improve/settings.py``。
 """
 
 from pathlib import Path
+
+from my_improve.settings import (
+    improvement_tag,
+    normalized_improvement_mode,
+    selected_improvement_config_path,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -22,6 +29,11 @@ MODEL_IMAGE_SIZE = 512
 # 该开关对 S/M/L/X 四种规模统一生效；验证、测试和大图推理不会执行随机增强。
 ENABLE_VRAC_AUGMENTATION = False
 USE_VRAC_AUGMENTATION = ENABLE_VRAC_AUGMENTATION
+
+# 当前网络改进状态，供训练、验证和测试脚本统一显示与核对。
+# 状态直接由 my_improve/settings.py 生成，请勿在这里单独修改。
+ACTIVE_IMPROVEMENT_MODE = normalized_improvement_mode()
+USE_QLCS = ACTIVE_IMPROVEMENT_MODE == "qlcs"
 
 # ENABLE_VRAC_AUGMENTATION = False：当前规模的普通 D-FINE 基线
 # ENABLE_VRAC_AUGMENTATION = True ：当前规模的 D-FINE + VRAC 训练增强
@@ -60,13 +72,17 @@ def normalized_model_size() -> str:
 
 
 def selected_model_config_path() -> Path:
-    """返回当前规模的基础 YAML 或启用 VRAC 的训练 YAML。"""
+    """返回当前规模、增强方式及网络改进完全一致的 YAML。"""
     model_size = normalized_model_size()
     config_paths = VRAC_CONFIG_PATHS if USE_VRAC_AUGMENTATION else MODEL_CONFIG_PATHS
-    return config_paths[model_size]
+    return selected_improvement_config_path(
+        model_size,
+        config_paths[model_size],
+        USE_VRAC_AUGMENTATION,
+    )
 
 
 MODEL_TAG = f"D-FINE-{normalized_model_size().upper()}" + (
     "_VRAC" if USE_VRAC_AUGMENTATION else ""
-)
+) + improvement_tag()
 PRETRAINED_WEIGHT_PATH = PRETRAINED_WEIGHT_PATHS[normalized_model_size()]

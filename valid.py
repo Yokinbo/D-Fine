@@ -40,7 +40,8 @@ from src.solver.det_engine import evaluate
 # =============================================================================
 # 用户验证参数配置区：直接填写绝对路径
 # =============================================================================
-# 由 experiment_config.py 的 MODEL_SIZE 选择与训练一致的 S/M/L/X 模型配置。
+# 模型规模由 experiment_config.py 控制，改进模式由 my_improve/settings.py 控制；
+# 两者必须与训练权重完全一致。
 CONFIG_PATH = str(selected_model_config_path())
 
 # 应用验证默认使用 mAP@0.5 最优的 best_map50.pth。也可改为

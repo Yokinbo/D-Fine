@@ -1,0 +1,16 @@
+# D-FINE-M + QLCS single-module ablation config.
+# Only the improvement arguments are overridden; all other settings inherit the M baseline.
+__include__: [
+  '../configs/dfine/custom/dfine_hgnetv2_m_custom.yml',
+]
+
+output_dir: ./output/dfine_hgnetv2_m_qlcs
+
+DFINETransformer:
+  use_qlcs: True
+  qlcs_num_components: 5
+  qlcs_attention_dim: 64
+  qlcs_offset_scale: 0.35
+  qlcs_dropout: 0.0
+  qlcs_init_scale: 0.01
+  qlcs_layers: [0, 1, 2, 3]
