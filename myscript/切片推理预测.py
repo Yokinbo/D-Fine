@@ -49,17 +49,17 @@ from src.core import YAMLConfig
 
 # 模型结构必须与训练权重一致。默认跟随 experiment_config.py 中的 S/M 设置。
 MODEL_CONFIG = selected_model_config_path()
-CHECKPOINT_PATH = Path(r"E:\YOLO\D-FINE\output\新版数据集m-512_100轮\best_map50.pth")
+CHECKPOINT_PATH = Path(r"E:\YOLO\权重结果\D-FINE\SEED2026-m-512_150epoch\best_map50.pth")
 NUM_CLASSES = 1
 
 # 待预测的小 TIFF 目录，支持递归读取子目录。
-INPUT_DIR = Path(r"E:\YOLO\D-FINE\datasets\mydatasets\test\images")
+INPUT_DIR = Path(r"F:\3能源金三角基础设施识别\火力发电厂\1数据集制作与备注\青海火电厂\切片")
 
 # 对应的 YOLO 标签目录；只推理、不统计漏检误检时设为 None。
-LABEL_DIR= Path(r"E:\YOLO\D-FINE\datasets\mydatasets\test\labels")
+LABEL_DIR= Path(r"F:\3能源金三角基础设施识别\火力发电厂\1数据集制作与备注\青海火电厂\标签")
 #LABEL_DIR = None
 
-OUTPUT_DIR = Path(r"F:\2testkeshan\可删模型切片推测\3")
+OUTPUT_DIR = Path(r"F:\3能源金三角基础设施识别\火力发电厂\1数据集制作与备注\青海火电厂\推理测试可删")
 
 CONFIDENCE = 0.50
 NMS_IOU = 0.70

@@ -1,0 +1,31 @@
+# S/M/L/X 共用的遥感影像训练增强配置。
+# 本文件只覆盖 train_dataloader，不改变模型结构、验证流程或推理流程。
+train_dataloader:
+  dataset:
+    transforms:
+      ops:
+        # 温和的辐射变化，不执行不符合RGB物理意义的通道置换。
+        - {type: RemoteSensingColorJitter, brightness: 0.15, contrast: 0.2, saturation: 0.15, hue: 0.02, p: 0.5}
+        # 模拟切片清晰度、大气条件以及成像或压缩噪声的轻微变化。
+        - {type: RemoteSensingGaussianBlur, kernel_size: 3, sigma: [0.1, 1.2], p: 0.2}
+        - {type: RemoteSensingGaussianNoise, std: 0.02, p: 0.2}
+        # 限制外扩强度，避免默认大范围外扩和黑色填充破坏火电厂上下文。
+        - {type: RandomZoomOut, fill: 114, side_range: [1.0, 1.5], p: 0.3}
+        # VRAC：裁剪后每个目标至少保留70%，并保护原本已经贴边的目标。
+        - {type: VisibleRatioAwareCrop, p: 0.3, min_visible_ratio: 0.7, min_scale: 0.7, max_scale: 1.0, trials: 40, protect_edge_boxes: True, edge_margin: 2.0}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip, p: 0.5}
+        - {type: RandomVerticalFlip, p: 0.5}
+        # train.py 会把该值同步为 experiment_config.py 中的 MODEL_IMAGE_SIZE。
+        - {type: Resize, size: [512, 512]}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+      policy:
+        name: stop_epoch
+        # train.py 会把该值同步为 AUGMENTATION_STOP_EPOCH。
+        epoch: 180
+        ops: ['RemoteSensingColorJitter', 'RemoteSensingGaussianBlur', 'RemoteSensingGaussianNoise', 'RandomZoomOut', 'VisibleRatioAwareCrop']
+  collate_fn:
+    # 关闭原配置中的多尺度重复，所有规模统一使用 MODEL_IMAGE_SIZE。
+    base_size_repeat: ~

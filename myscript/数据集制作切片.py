@@ -13,10 +13,10 @@ from rasterio.windows import Window, transform as window_transform
 # =========================
 # Output is only the final image tiles for object-detection labeling/training.
 RUN_CONFIG = {
-    "INPUT_TIF": r"G:\金三角tif影像\第四批金三角优化数据集优化部分\2负样本\图片1\榆林负样20.tif",
+    "INPUT_TIF": r"F:\3能源金三角基础设施识别\火力发电厂\1数据集制作与备注\青海火电厂\91卫图tif\八\Level16\八.tif",
 
     # None means: create <input_tif_parent>\1_tiles_768
-    "OUT_DIR": r"G:\金三角tif影像\第四批金三角优化数据集优化部分\2负样本\图片1\裁剪后",
+    "OUT_DIR": r"F:\3能源金三角基础设施识别\火力发电厂\1数据集制作与备注\青海火电厂\切片",
 
     "TILE_SIZE": 512,                   #512   256
     "STRIDE": 256,                      #768   384
@@ -25,7 +25,7 @@ RUN_CONFIG = {
     "BLACK_THRESHOLD": 3,
     "MIN_VALID_RATIO": 0.20,
 
-    "NAME_PREFIX": "榆林负样20_",
+    "NAME_PREFIX": "青海8_",
 }
 
 

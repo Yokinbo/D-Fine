@@ -38,8 +38,9 @@ from src.solver import TASKS
 # =============================================================================
 # 用户训练参数配置区（直接运行 `python train.py` 时使用）
 # =============================================================================
-# 推荐：RTX 4060 Laptop 8GB 使用 D-FINE-S。可选值："n"、"s"、"m"。
-# MODEL_SIZE and the S-only VRAC switch are shared in experiment_config.py.
+# 推荐：RTX 4060 Laptop 8GB 优先使用 D-FINE-S。可选值为 "s"、"m"、"l"、"x"；
+# L/X 显存占用明显更高，切换后如显存不足，应优先减小训练批量。
+# S/M/L/X 模型规模及对四种规模通用的 VRAC 开关统一在 experiment_config.py 中设置。
 
 # COCO 格式数据集：直接填写绝对路径。Windows 路径前请保留 r，避免反斜杠被转义。
 # 训练/验证数据的绝对路径。训练前先运行 myscript/yolo2coco.py 生成 JSON。
@@ -63,7 +64,7 @@ AUGMENTATION_STOP_EPOCH = 180
 #正式论文中应用EPOCHS=200、AUGMENTATION_STOP_EPOCH=180；         AUGMENTATION_STOP_EPOCH = 210
 #快速测试时应用EPOCHS=40、AUGMENTATION_STOP_EPOCH=36。
 
-# 训练结果输出目录：每次 S/M、基线/改进实验请直接填写独立绝对路径。
+# 训练结果输出目录：每次 S/M/L/X、基线/改进实验请填写独立绝对路径。
 OUTPUT_DIR = r"E:\YOLO\D-FINE\output\新版数据集m-512_200轮"
 
 SEED = 2026
@@ -71,13 +72,15 @@ DEVICE = "cuda"
 USE_AMP = True
 
 # S 模型原配置的学习率为 4e-4。修改 BASE_LR 时，骨干网络学习率会保持为其 0.5 倍。
-BASE_LR = 4e-4
+# M模型建议改为BASE_LR = 2e-4
+
+BASE_LR = 2e-4
 WEIGHT_DECAY = 1e-4
 PRINT_FREQ = 20
 CHECKPOINT_FREQ = 10
 
 
-# 由 experiment_config.py 按 S/M 自动选择 weight 目录中的 COCO 预训练权重。
+# 由 experiment_config.py 按 S/M/L/X 自动选择 weight 目录中的 COCO 预训练权重。
 # 留空时仍会使用 HGNetv2 预训练骨干，但不是完整检测器预训练权重。
 TUNING_CHECKPOINT = str(PRETRAINED_WEIGHT_PATH)
 

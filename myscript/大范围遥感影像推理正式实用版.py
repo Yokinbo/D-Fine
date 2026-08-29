@@ -54,27 +54,23 @@ from experiment_config import (
 # =============================================================================
 
 # 待检测的灵武市/镇级/县级 RGB GeoTIFF 绝对路径。
-INPUT_TIF = r"G:\金三角tif影像\宁夏\银川市\灵武市1.88m\Level16\灵武市1.88m.tif"
+INPUT_TIF = r"G:\金三角tif影像\鄂尔多斯市\准格尔旗\准格尔召镇1.84m\Level16\准格尔召镇1.84m.tif"
 
 # 由 experiment_config.py 的 MODEL_SIZE 自动选择 S/M 结构。
 MODEL_CONFIG = str(selected_model_config_path())
-
 # 训练集仅含火电厂（hdc）一个类别；必须与所选 checkpoint 的检测头一致。
 NUM_CLASSES = 1
-
 # 建议填写经过 valid.py 比较后确定的最佳正式训练权重。
-CHECKPOINT = r"E:\YOLO\D-FINE\output\新版数据集m-512_200轮\best_map50.pth"
+CHECKPOINT = r"F:\3能源金三角基础设施识别\1模型推理应用可用权重\best_map50.pth"
 
 # 本次正式应用的独立输出目录。
-OUTPUT_DIR = r"G:\b\8月13与14精度对比测试可删\1\m-512_200"
+OUTPUT_DIR = r"G:\新版金三角dfine检测结果\仅有置信度0.2\鄂尔多斯市\准格尔旗\准格尔召镇"
 
 # Shapefile 输出文件名：只填写文件名并保留 .shp 后缀，文件仍保存到 OUTPUT_DIR。
-SHP_OUTPUT_NAME = "m-512_200灵武市-置信度0.2.shp"
-
+SHP_OUTPUT_NAME = "准格尔召镇-置信度0.2.shp"
 # 最终制图置信度：先填写 valid.py 报告的最佳 F1 置信度，再根据
 # 真实大图上的误检/漏检人工调整。也可用 --confidence 临时覆盖。
 FINAL_CONFIDENCE = 0.2
-
 
 DEVICE = "cuda:0"
 USE_AMP = True
