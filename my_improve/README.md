@@ -1,21 +1,58 @@
-# D-FINE 模型改进实验
+# D-FINE 火力发电厂检测改进实验
 
-本目录集中保存论文模型改进的实现、开关和消融 YAML。当前只完成第一项：
+本目录集中保存论文网络改进的实现、统一开关和消融 YAML。训练、验证和测试
+均通过 `settings.py` 选择同一结构，避免权重与模型配置不一致。
 
-- `qlcs.py`：查询引导的隐式部件采样（QLCS）；
-- `dfine_hgnetv2_m_qlcs.yml`：D-FINE-M + QLCS 单模块配置；
-- `settings.py`：训练、验证和测试共同使用的改进模式开关。
+## 当前两个改进模块
 
-## 第一项消融怎么运行
+- `qlcs.py`：查询引导的隐式部件采样（QLCS）。在仅有整厂框标注的条件下，
+  从动态参考框内部学习潜在部件证据，主要改善复合目标表征与定位。
+- `qfbcg.py`：查询引导的前景—背景对比门控（QFBCG）。同时采样参考框内部
+  和扩大框外环带，将内—外邻域的差分证据只注入分类分支，主要用于抑制
+  工业园区、煤堆、厂房等相似背景误检，并尽量保护 FDR 回归精度。框外样本
+  在没有额外部件标注时只称为“邻域背景候选”，不把它们当作真实负标签监督。
 
-1. 在 `settings.py` 中设置 `IMPROVEMENT_MODE = "qlcs"`。
-2. 保持 `experiment_config.py` 中 `MODEL_SIZE = "m"`、关闭 VRAC。
-3. 在 `train.py` 中为本次 QLCS 实验填写新的 `OUTPUT_DIR`，不要覆盖基线结果。
-4. 运行 `python train.py`。训练完成后，验证和测试仍保持同一个 `qlcs` 模式，
-   再分别填写改进权重与结果目录。
+QFBCG 单独启用时使用固定框内采样点；和 QLCS 组合时直接复用 QLCS 学习到的
+潜在部件 token，减少重复采样并形成“部件—整厂—邻域背景”的互补证据。
+默认只在第 1～3 个解码层启用 QFBCG，避免使用尚未充分细化的第 0 层参考框；
+QLCS 仍保持第 0～3 层启用。
 
-若要复现原始基线，只需把 `IMPROVEMENT_MODE` 改回 `"baseline"`。当前阶段不要
-同时开启 QLCS 和 VRAC，以免单模块增益无法归因。
+## 统一开关
 
-后续将按消融顺序继续加入整体—部件—背景关系门控与结构一致性监督；在前一项
-经验证有效前，不提前叠加下一项。
+在 `settings.py` 修改 `IMPROVEMENT_MODE`：
+
+| 模式 | 网络结构 | 用途 |
+|---|---|---|
+| `baseline` | 原始 D-FINE-M | 基线 |
+| `qlcs` | D-FINE-M + QLCS | 第一模块消融 |
+| `qfbcg` | D-FINE-M + QFBCG | 第二模块独立消融 |
+| `qlcs_qfbcg` | D-FINE-M + QLCS + QFBCG | 第二步累计消融/当前完整模型 |
+
+对应 YAML：
+
+- `dfine_hgnetv2_m_qlcs.yml`
+- `dfine_hgnetv2_m_qfbcg.yml`
+- `dfine_hgnetv2_m_qlcs_qfbcg.yml`
+
+## 推荐实验顺序
+
+1. 保持 `experiment_config.py` 中 `MODEL_SIZE = "m"`、VRAC 关闭。
+2. 所有消融使用相同数据、官方 D-FINE-M 预训练权重、学习率、epoch 和随机种子。
+3. 四种模式均从同一官方预训练权重重新训练；不要把 QLCS 权重当作组合模型的
+   `resume`，否则训练预算和初始化不再公平。
+4. 每次先在 `train.py` 填写独立输出目录。评估时保持同一模式，再在
+   `valid.py`/`test.py` 填写该模式生成的权重。
+
+最小论文消融表建议包含 `baseline → +QLCS → +QLCS+QFBCG`；若篇幅允许，再加
+`+QFBCG` 单模块行，形成完整的四组合归因。
+
+## 判断 QFBCG 是否有效
+
+QFBCG 针对的是固定置信度 0.50 下的误检，而不是简单调阈值。建议同时核对：
+
+- P、F1 提升，FP 数减少；
+- R 下降不超过约 0.5～1 个百分点；
+- AP50 不下降，AP75 与 mAP50:95 不出现明显退化；
+- 至少三个随机种子的变化方向基本一致。
+
+只提高 P 而明显牺牲 R/AP，不能视为成功的结构改进。

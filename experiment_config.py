@@ -33,7 +33,8 @@ USE_VRAC_AUGMENTATION = ENABLE_VRAC_AUGMENTATION
 # 当前网络改进状态，供训练、验证和测试脚本统一显示与核对。
 # 状态直接由 my_improve/settings.py 生成，请勿在这里单独修改。
 ACTIVE_IMPROVEMENT_MODE = normalized_improvement_mode()
-USE_QLCS = ACTIVE_IMPROVEMENT_MODE == "qlcs"
+USE_QLCS = ACTIVE_IMPROVEMENT_MODE in {"qlcs", "qlcs_qfbcg"}
+USE_QFBCG = ACTIVE_IMPROVEMENT_MODE in {"qfbcg", "qlcs_qfbcg"}
 
 # ENABLE_VRAC_AUGMENTATION = False：当前规模的普通 D-FINE 基线
 # ENABLE_VRAC_AUGMENTATION = True ：当前规模的 D-FINE + VRAC 训练增强

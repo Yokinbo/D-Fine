@@ -45,7 +45,7 @@ from src.solver.det_engine import evaluate
 CONFIG_PATH = str(selected_model_config_path())
 
 # 只填写已经通过验证集选定的最终权重。不要根据 test 结果再更换权重。
-CHECKPOINT_PATH = Path(r"E:\YOLO\权重结果\D-FINE\SEED2026-m-512_150epoch\best_map50.pth")
+CHECKPOINT_PATH = Path(r"G:\b1\权重结果\改进实验dfine\base_4e-4_SD18\best_map50.pth")
 
 TEST_IMAGES_DIR = Path(r"E:\YOLO\D-FINE\datasets\mydatasets\test\images")
 TEST_ANNOTATION = Path(r"E:\YOLO\D-FINE\datasets\mydatasets\test\annotations\test.json")
@@ -56,13 +56,13 @@ INPUT_SIZE = MODEL_IMAGE_SIZE
 TEST_BATCH_SIZE = 6
 NUM_WORKERS = 2
 DEVICE = "cuda"
-SEED = 2026
+SEED = 18
 
 # 测试结果使用独立目录，不覆盖训练或验证结果。
-TEST_OUTPUT_DIR = Path(r"E:\YOLO\权重结果\D-FINE\SEED2026-m-512_150epoch\测试集精度")
+TEST_OUTPUT_DIR = Path(r"G:\b1\权重结果\改进实验dfine\base_4e-4_SD18\测试集精度")
 
 # 只影响论文 TXT 中的显示名称，不参与权重加载。
-PAPER_MODEL_NAME = "SD2026-m512_150"
+PAPER_MODEL_NAME = "base_4e-4_SD18"
 
 # P/R/F1 固定使用仓库 Validator 的 confidence=0.50、matching IoU=0.50。
 # 下列置信度只用于统一效率测试的检测框过滤口径。

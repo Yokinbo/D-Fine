@@ -9,13 +9,22 @@ from pathlib import Path
 
 IMPROVEMENT_DIR = Path(__file__).resolve().parent
 
-# 当前第一步只开放 QLCS 单模块消融。
-# 可选值："baseline"（原始 D-FINE）或 "qlcs"（D-FINE + QLCS）。
-IMPROVEMENT_MODE = "baseline"
+# 四种模式可完成基线、两个单模块及累计组合的完整消融。
+# "baseline"：原始 D-FINE-M
+# "qlcs"：仅开启查询引导的隐式部件采样
+# "qfbcg"：仅开启查询引导的前景—背景对比门控
+# "qlcs_qfbcg"：同时开启 QLCS 和 QFBCG（第二步累计消融）
+IMPROVEMENT_MODE = "qlcs_qfbcg"
 
 IMPROVEMENT_CONFIG_PATHS = {
     "qlcs": {
         "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs.yml",
+    },
+    "qfbcg": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qfbcg.yml",
+    },
+    "qlcs_qfbcg": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_qfbcg.yml",
     },
 }
 
@@ -41,7 +50,7 @@ def selected_improvement_config_path(
         return baseline_config_path
     if use_vrac_augmentation:
         raise ValueError(
-            "第一阶段应单独验证网络改进，请先关闭 VRAC；待 QLCS 单模块消融完成后再做组合实验。"
+            "网络结构消融期间请关闭 VRAC，避免增强增益与 QLCS/QFBCG 的贡献混淆。"
         )
 
     configs = IMPROVEMENT_CONFIG_PATHS[mode]

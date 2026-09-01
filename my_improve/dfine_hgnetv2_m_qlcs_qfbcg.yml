@@ -1,0 +1,27 @@
+# D-FINE-M + QLCS + QFBCG 累计消融配置。
+# QLCS 建模框内潜在部件，QFBCG 对比框内证据与框外邻域背景候选。
+__include__: [
+  '../configs/dfine/custom/dfine_hgnetv2_m_custom.yml',
+]
+
+output_dir: ./output/dfine_hgnetv2_m_qlcs_qfbcg
+
+DFINETransformer:
+  use_qlcs: True
+  qlcs_num_components: 5
+  qlcs_attention_dim: 64
+  qlcs_offset_scale: 0.35
+  qlcs_dropout: 0.0
+  qlcs_init_scale: 0.01
+  qlcs_layers: [0, 1, 2, 3]
+
+  use_qfbcg: True
+  qfbcg_num_foreground_points: 5
+  qfbcg_num_background_points: 8
+  qfbcg_foreground_radius: 0.60
+  qfbcg_context_scale: 1.35
+  qfbcg_gate_hidden_dim: 96
+  qfbcg_init_scale: 0.01
+  qfbcg_dropout: 0.0
+  # QLCS 先在第 0 层补充部件证据，QFBCG 从第 1 层起使用较成熟的参考框。
+  qfbcg_layers: [1, 2, 3]

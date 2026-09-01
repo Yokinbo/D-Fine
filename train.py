@@ -29,6 +29,7 @@ from experiment_config import (
     MODEL_IMAGE_SIZE,
     MODEL_TAG,
     PRETRAINED_WEIGHT_PATH,
+    USE_QFBCG,
     USE_QLCS,
     USE_VRAC_AUGMENTATION,
     selected_model_config_path,
@@ -198,6 +199,7 @@ def print_user_config(args) -> None:
     print(f"模型: {MODEL_TAG}")
     print(
         f"QLCS模块: {'开启' if USE_QLCS else '关闭'} | "
+        f"QFBCG模块: {'开启' if USE_QFBCG else '关闭'} | "
         f"网络改进模式: {ACTIVE_IMPROVEMENT_MODE} | "
         f"VRAC增强: {'开启' if USE_VRAC_AUGMENTATION else '关闭'}"
     )

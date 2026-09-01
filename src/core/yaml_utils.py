@@ -34,7 +34,10 @@ def load_config(file_path, cfg=None):
     _, ext = os.path.splitext(file_path)
     assert ext in [".yml", ".yaml"], "only support yaml files"
 
-    with open(file_path) as f:
+    # 项目配置统一按 UTF-8 读取，避免 Windows 中文系统默认使用 GBK，
+    # 从而无法解析带中文注释的自定义 YAML。utf-8-sig 同时兼容
+    # 普通 UTF-8 与带 BOM 的 UTF-8 文件。
+    with open(file_path, encoding="utf-8-sig") as f:
         file_cfg = yaml.load(f, Loader=yaml.SafeLoader)
         if file_cfg is None:
             return {}
@@ -48,7 +51,7 @@ def load_config(file_path, cfg=None):
             if not base_yaml.startswith("/"):
                 base_yaml = os.path.join(os.path.dirname(file_path), base_yaml)
 
-            with open(base_yaml) as f:
+            with open(base_yaml, encoding="utf-8-sig") as f:
                 base_cfg = load_config(base_yaml, cfg)
                 merge_dict(cfg, base_cfg)
 

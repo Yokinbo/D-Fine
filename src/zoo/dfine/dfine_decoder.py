@@ -18,6 +18,7 @@ import torch.nn.functional as F
 import torch.nn.init as init
 
 from my_improve.qlcs import QueryGuidedLatentComponentSampler
+from my_improve.qfbcg import QueryGuidedForegroundBackgroundContrastGate
 
 from ...core import register
 from .denoising import get_contrastive_denoising_training_group
@@ -338,6 +339,8 @@ class TransformerDecoder(nn.Module):
         layer_scale=2,
         qlcs=None,
         qlcs_layers=None,
+        qfbcg=None,
+        qfbcg_layers=None,
     ):
         super(TransformerDecoder, self).__init__()
         self.hidden_dim = hidden_dim
@@ -351,6 +354,12 @@ class TransformerDecoder(nn.Module):
             tuple(range(self.eval_idx + 1))
             if qlcs_layers is None
             else tuple(int(index) for index in qlcs_layers)
+        )
+        self.qfbcg = qfbcg
+        self.qfbcg_layers = (
+            tuple(range(self.eval_idx + 1))
+            if qfbcg_layers is None
+            else tuple(int(index) for index in qfbcg_layers)
         )
         self.layers = nn.ModuleList(
             [copy.deepcopy(decoder_layer) for _ in range(self.eval_idx + 1)]
@@ -429,19 +438,45 @@ class TransformerDecoder(nn.Module):
             )
 
             # QLCS 仅作用于普通隐藏维度的有效解码层；关闭时不进入任何额外计算。
+            qlcs_details = None
             if self.qlcs is not None and i in self.qlcs_layers and i <= self.eval_idx:
-                output = self.qlcs(
+                if self.qfbcg is not None and i in self.qfbcg_layers:
+                    output, qlcs_details = self.qlcs(
+                        output,
+                        ref_points_detach,
+                        memory,
+                        spatial_shapes,
+                        memory_mask=memory_mask,
+                        return_details=True,
+                    )
+                else:
+                    output = self.qlcs(
+                        output,
+                        ref_points_detach,
+                        memory,
+                        spatial_shapes,
+                        memory_mask=memory_mask,
+                    )
+
+            # QFBCG 只为分类头生成前景—背景对比查询；回归/FDR 仍使用 output，
+            # 避免为了提升 Precision 而破坏 QLCS 已获得的严格定位精度。
+            cls_output = output
+            if self.qfbcg is not None and i in self.qfbcg_layers and i <= self.eval_idx:
+                cls_output = self.qfbcg(
                     output,
                     ref_points_detach,
                     memory,
                     spatial_shapes,
                     memory_mask=memory_mask,
+                    component_tokens=(
+                        None if qlcs_details is None else qlcs_details["component_tokens"]
+                    ),
                 )
 
             if i == 0:
                 # Initial bounding box predictions with inverse sigmoid refinement
                 pre_bboxes = F.sigmoid(pre_bbox_head(output) + inverse_sigmoid(ref_points_detach))
-                pre_scores = score_head[0](output)
+                pre_scores = score_head[0](cls_output)
                 ref_points_initial = pre_bboxes.detach()
 
             # Refine bounding box corners using FDR, integrating previous layer's corrections
@@ -451,7 +486,7 @@ class TransformerDecoder(nn.Module):
             )
 
             if self.training or i == self.eval_idx:
-                scores = score_head[i](output)
+                scores = score_head[i](cls_output)
                 # Lqe does not affect the performance here.
                 scores = self.lqe_layers[i](scores, pred_corners)
                 dec_out_logits.append(scores)
@@ -514,6 +549,15 @@ class DFINETransformer(nn.Module):
         qlcs_dropout=0.0,
         qlcs_init_scale=0.01,
         qlcs_layers=None,
+        use_qfbcg=False,
+        qfbcg_num_foreground_points=5,
+        qfbcg_num_background_points=8,
+        qfbcg_foreground_radius=0.60,
+        qfbcg_context_scale=1.35,
+        qfbcg_gate_hidden_dim=96,
+        qfbcg_init_scale=0.01,
+        qfbcg_dropout=0.0,
+        qfbcg_layers=None,
     ):
         super().__init__()
         assert len(feat_channels) <= num_levels
@@ -542,6 +586,15 @@ class DFINETransformer(nn.Module):
             if invalid_layers:
                 raise ValueError(
                     f"qlcs_layers 包含无效层索引 {invalid_layers}，num_layers={num_layers}"
+                )
+
+        if qfbcg_layers is not None:
+            invalid_layers = [
+                int(index) for index in qfbcg_layers if not 0 <= int(index) < num_layers
+            ]
+            if invalid_layers:
+                raise ValueError(
+                    f"qfbcg_layers 包含无效层索引 {invalid_layers}，num_layers={num_layers}"
                 )
 
         assert query_select_method in ("default", "one2many", "agnostic"), ""
@@ -589,6 +642,21 @@ class DFINETransformer(nn.Module):
             if use_qlcs
             else None
         )
+        qfbcg = (
+            QueryGuidedForegroundBackgroundContrastGate(
+                hidden_dim=hidden_dim,
+                num_levels=num_levels,
+                num_foreground_points=qfbcg_num_foreground_points,
+                num_background_points=qfbcg_num_background_points,
+                foreground_radius=qfbcg_foreground_radius,
+                context_scale=qfbcg_context_scale,
+                gate_hidden_dim=qfbcg_gate_hidden_dim,
+                init_scale=qfbcg_init_scale,
+                dropout=qfbcg_dropout,
+            )
+            if use_qfbcg
+            else None
+        )
         self.decoder = TransformerDecoder(
             hidden_dim,
             decoder_layer,
@@ -602,6 +670,8 @@ class DFINETransformer(nn.Module):
             layer_scale,
             qlcs=qlcs,
             qlcs_layers=qlcs_layers,
+            qfbcg=qfbcg,
+            qfbcg_layers=qfbcg_layers,
         )
         # denoising
         self.num_denoising = num_denoising

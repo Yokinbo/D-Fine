@@ -1,0 +1,19 @@
+# D-FINE-M + QFBCG 单模块消融配置。
+# 仅覆盖第二改进模块参数，其余训练设置继承 M 基线。
+__include__: [
+  '../configs/dfine/custom/dfine_hgnetv2_m_custom.yml',
+]
+
+output_dir: ./output/dfine_hgnetv2_m_qfbcg
+
+DFINETransformer:
+  use_qfbcg: True
+  qfbcg_num_foreground_points: 5
+  qfbcg_num_background_points: 8
+  qfbcg_foreground_radius: 0.60
+  qfbcg_context_scale: 1.35
+  qfbcg_gate_hidden_dim: 96
+  qfbcg_init_scale: 0.01
+  qfbcg_dropout: 0.0
+  # 第 0 层参考框尚未充分细化，从第 1 层开始执行内—外邻域对比更稳健。
+  qfbcg_layers: [1, 2, 3]
