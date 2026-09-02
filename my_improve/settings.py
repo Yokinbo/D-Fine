@@ -9,12 +9,13 @@ from pathlib import Path
 
 IMPROVEMENT_DIR = Path(__file__).resolve().parent
 
-# 四种模式可完成基线、两个单模块及累计组合的完整消融。
+# QFBCG 模式保留用于复现已经完成的失败实验；后续第二模块改用 DSQC。
 # "baseline"：原始 D-FINE-M
 # "qlcs"：仅开启查询引导的隐式部件采样
-# "qfbcg"：仅开启查询引导的前景—背景对比门控
-# "qlcs_qfbcg"：同时开启 QLCS 和 QFBCG（第二步累计消融）
-IMPROVEMENT_MODE = "qlcs_qfbcg"
+# "dsqc"：仅开启解码稳定性感知查询校准
+# "qlcs_dsqc"：同时开启 QLCS 和 DSQC（新的第二步累计消融）
+# "qfbcg" / "qlcs_qfbcg"：旧 QFBCG 复现实验，不建议继续作为正式方案
+IMPROVEMENT_MODE = "qlcs_dsqc"
 
 IMPROVEMENT_CONFIG_PATHS = {
     "qlcs": {
@@ -25,6 +26,12 @@ IMPROVEMENT_CONFIG_PATHS = {
     },
     "qlcs_qfbcg": {
         "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_qfbcg.yml",
+    },
+    "dsqc": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_dsqc.yml",
+    },
+    "qlcs_dsqc": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc.yml",
     },
 }
 
@@ -50,7 +57,7 @@ def selected_improvement_config_path(
         return baseline_config_path
     if use_vrac_augmentation:
         raise ValueError(
-            "网络结构消融期间请关闭 VRAC，避免增强增益与 QLCS/QFBCG 的贡献混淆。"
+            "网络结构消融期间请关闭 VRAC，避免增强增益与网络模块贡献混淆。"
         )
 
     configs = IMPROVEMENT_CONFIG_PATHS[mode]

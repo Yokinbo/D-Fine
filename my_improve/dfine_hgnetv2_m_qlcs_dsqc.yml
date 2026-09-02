@@ -1,0 +1,23 @@
+# D-FINE-M + QLCS + DSQC 累计消融配置。
+# QLCS补充框内部件证据，DSQC校准最终查询置信度。
+__include__: [
+  '../configs/dfine/custom/dfine_hgnetv2_m_custom.yml',
+]
+
+output_dir: ./output/dfine_hgnetv2_m_qlcs_dsqc
+
+DFINETransformer:
+  use_qlcs: True
+  qlcs_num_components: 5
+  qlcs_attention_dim: 64
+  qlcs_offset_scale: 0.35
+  qlcs_dropout: 0.0
+  qlcs_init_scale: 0.01
+  qlcs_layers: [0, 1, 2, 3]
+
+  use_dsqc: True
+  dsqc_bottleneck_dim: 64
+  dsqc_max_logit_adjustment: 1.0
+  dsqc_dropout: 0.0
+  dsqc_layers: [3]
+

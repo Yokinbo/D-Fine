@@ -19,6 +19,7 @@ import torch.nn.init as init
 
 from my_improve.qlcs import QueryGuidedLatentComponentSampler
 from my_improve.qfbcg import QueryGuidedForegroundBackgroundContrastGate
+from my_improve.dsqc import DecoderStabilityQueryCalibrator
 
 from ...core import register
 from .denoising import get_contrastive_denoising_training_group
@@ -341,6 +342,8 @@ class TransformerDecoder(nn.Module):
         qlcs_layers=None,
         qfbcg=None,
         qfbcg_layers=None,
+        dsqc=None,
+        dsqc_layers=None,
     ):
         super(TransformerDecoder, self).__init__()
         self.hidden_dim = hidden_dim
@@ -360,6 +363,12 @@ class TransformerDecoder(nn.Module):
             tuple(range(self.eval_idx + 1))
             if qfbcg_layers is None
             else tuple(int(index) for index in qfbcg_layers)
+        )
+        self.dsqc = dsqc
+        self.dsqc_layers = (
+            tuple(range(1, self.eval_idx + 1))
+            if dsqc_layers is None
+            else tuple(int(index) for index in dsqc_layers)
         )
         self.layers = nn.ModuleList(
             [copy.deepcopy(decoder_layer) for _ in range(self.eval_idx + 1)]
@@ -419,6 +428,8 @@ class TransformerDecoder(nn.Module):
             project = self.project
 
         ref_points_detach = F.sigmoid(ref_points_unact)
+        previous_cls_output = None
+        previous_ref_bbox = None
 
         for i, layer in enumerate(self.layers):
             ref_points_input = ref_points_detach.unsqueeze(2)
@@ -489,6 +500,21 @@ class TransformerDecoder(nn.Module):
                 scores = score_head[i](cls_output)
                 # Lqe does not affect the performance here.
                 scores = self.lqe_layers[i](scores, pred_corners)
+                # DSQC 只校准分类 logits。相邻层框仅作为停止梯度的稳定性条件，
+                # 不改变 FDR 回归分支，也不修改输出框坐标。
+                if (
+                    self.dsqc is not None
+                    and i in self.dsqc_layers
+                    and previous_cls_output is not None
+                    and previous_ref_bbox is not None
+                ):
+                    scores = self.dsqc(
+                        scores,
+                        cls_output,
+                        previous_cls_output,
+                        inter_ref_bbox,
+                        previous_ref_bbox,
+                    )
                 dec_out_logits.append(scores)
                 dec_out_bboxes.append(inter_ref_bbox)
                 dec_out_pred_corners.append(pred_corners)
@@ -499,6 +525,8 @@ class TransformerDecoder(nn.Module):
 
             pred_corners_undetach = pred_corners
             ref_points_detach = inter_ref_bbox.detach()
+            previous_cls_output = cls_output.detach()
+            previous_ref_bbox = inter_ref_bbox.detach()
             output_detach = output.detach()
 
         return (
@@ -558,6 +586,11 @@ class DFINETransformer(nn.Module):
         qfbcg_init_scale=0.01,
         qfbcg_dropout=0.0,
         qfbcg_layers=None,
+        use_dsqc=False,
+        dsqc_bottleneck_dim=64,
+        dsqc_max_logit_adjustment=1.0,
+        dsqc_dropout=0.0,
+        dsqc_layers=None,
     ):
         super().__init__()
         assert len(feat_channels) <= num_levels
@@ -595,6 +628,16 @@ class DFINETransformer(nn.Module):
             if invalid_layers:
                 raise ValueError(
                     f"qfbcg_layers 包含无效层索引 {invalid_layers}，num_layers={num_layers}"
+                )
+
+        if dsqc_layers is not None:
+            invalid_layers = [
+                int(index) for index in dsqc_layers if not 1 <= int(index) < num_layers
+            ]
+            if invalid_layers:
+                raise ValueError(
+                    "dsqc_layers 必须从第 1 层开始，且小于 num_layers；"
+                    f"当前无效索引 {invalid_layers}，num_layers={num_layers}"
                 )
 
         assert query_select_method in ("default", "one2many", "agnostic"), ""
@@ -657,6 +700,16 @@ class DFINETransformer(nn.Module):
             if use_qfbcg
             else None
         )
+        dsqc = (
+            DecoderStabilityQueryCalibrator(
+                hidden_dim=hidden_dim,
+                bottleneck_dim=dsqc_bottleneck_dim,
+                max_logit_adjustment=dsqc_max_logit_adjustment,
+                dropout=dsqc_dropout,
+            )
+            if use_dsqc
+            else None
+        )
         self.decoder = TransformerDecoder(
             hidden_dim,
             decoder_layer,
@@ -672,6 +725,8 @@ class DFINETransformer(nn.Module):
             qlcs_layers=qlcs_layers,
             qfbcg=qfbcg,
             qfbcg_layers=qfbcg_layers,
+            dsqc=dsqc,
+            dsqc_layers=dsqc_layers,
         )
         # denoising
         self.num_denoising = num_denoising

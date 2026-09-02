@@ -1,0 +1,16 @@
+# D-FINE-M + DSQC 单模块消融配置。
+# DSQC 只在最终解码层校准分类 logits，不修改 FDR 回归分支。
+__include__: [
+  '../configs/dfine/custom/dfine_hgnetv2_m_custom.yml',
+]
+
+output_dir: ./output/dfine_hgnetv2_m_dsqc
+
+DFINETransformer:
+  use_dsqc: True
+  dsqc_bottleneck_dim: 64
+  dsqc_max_logit_adjustment: 1.0
+  dsqc_dropout: 0.0
+  # M模型共有4层解码器，仅利用第2→3层稳定性校准最终结果。
+  dsqc_layers: [3]
+
