@@ -14,8 +14,10 @@ IMPROVEMENT_DIR = Path(__file__).resolve().parent
 # "qlcs"：仅开启查询引导的隐式部件采样
 # "dsqc"：仅开启解码稳定性感知查询校准
 # "qlcs_dsqc"：同时开启 QLCS 和 DSQC（新的第二步累计消融）
+# "qacg"：仅开启质量感知查询竞争门控
+# "qlcs_dsqc_qacg"：依次开启 QLCS、DSQC 和 QACG（第三步累计消融）
 # "qfbcg" / "qlcs_qfbcg"：旧 QFBCG 复现实验，不建议继续作为正式方案
-IMPROVEMENT_MODE = "qlcs_dsqc"
+IMPROVEMENT_MODE = "qlcs_dsqc_qacg"
 
 IMPROVEMENT_CONFIG_PATHS = {
     "qlcs": {
@@ -32,6 +34,12 @@ IMPROVEMENT_CONFIG_PATHS = {
     },
     "qlcs_dsqc": {
         "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc.yml",
+    },
+    "qacg": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qacg.yml",
+    },
+    "qlcs_dsqc_qacg": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc_qacg.yml",
     },
 }
 

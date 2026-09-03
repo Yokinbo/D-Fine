@@ -29,6 +29,7 @@ from experiment_config import (
     MODEL_IMAGE_SIZE,
     MODEL_TAG,
     PRETRAINED_WEIGHT_PATH,
+    USE_QACG,
     USE_DSQC,
     USE_QFBCG,
     USE_QLCS,
@@ -70,9 +71,9 @@ AUGMENTATION_STOP_EPOCH = 135
 #快速测试时应用EPOCHS=40、AUGMENTATION_STOP_EPOCH=36。
 
 # 训练结果输出目录：每次 S/M/L/X、基线/改进实验请填写独立绝对路径。
-OUTPUT_DIR = r"E:\YOLO\D-FINE\output\测试可删"
+OUTPUT_DIR = r"E:\YOLO\D-FINE\output\qlcs_dsqc_qacg\2e-4_SD3407"
 
-SEED = 2026
+SEED = 3407
 DEVICE = "cuda"
 USE_AMP = True
 
@@ -202,6 +203,7 @@ def print_user_config(args) -> None:
         f"QLCS模块: {'开启' if USE_QLCS else '关闭'} | "
         f"QFBCG模块: {'开启' if USE_QFBCG else '关闭'} | "
         f"DSQC模块: {'开启' if USE_DSQC else '关闭'} | "
+        f"QACG模块: {'开启' if USE_QACG else '关闭'} | "
         f"网络改进模式: {ACTIVE_IMPROVEMENT_MODE} | "
         f"VRAC增强: {'开启' if USE_VRAC_AUGMENTATION else '关闭'}"
     )

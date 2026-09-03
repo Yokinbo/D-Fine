@@ -1,0 +1,16 @@
+# D-FINE-M + QLCS + DSQC + QACG 三模块累计消融配置。
+# 直接继承已冻结的 QLCS+DSQC 配置，仅增加 QACG，避免改动前两模块参数。
+__include__: [
+  './dfine_hgnetv2_m_qlcs_dsqc.yml',
+]
+
+output_dir: ./output/dfine_hgnetv2_m_qlcs_dsqc_qacg
+
+DFINETransformer:
+  use_qacg: True
+  qacg_bottleneck_dim: 64
+  qacg_overlap_threshold: 0.30
+  qacg_max_logit_adjustment: 1.0
+  qacg_dropout: 0.0
+  qacg_layers: [3]
+

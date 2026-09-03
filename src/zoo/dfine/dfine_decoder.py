@@ -20,6 +20,7 @@ import torch.nn.init as init
 from my_improve.qlcs import QueryGuidedLatentComponentSampler
 from my_improve.qfbcg import QueryGuidedForegroundBackgroundContrastGate
 from my_improve.dsqc import DecoderStabilityQueryCalibrator
+from my_improve.qacg import QualityAwareCompetitiveQueryGate
 
 from ...core import register
 from .denoising import get_contrastive_denoising_training_group
@@ -344,6 +345,8 @@ class TransformerDecoder(nn.Module):
         qfbcg_layers=None,
         dsqc=None,
         dsqc_layers=None,
+        qacg=None,
+        qacg_layers=None,
     ):
         super(TransformerDecoder, self).__init__()
         self.hidden_dim = hidden_dim
@@ -369,6 +372,12 @@ class TransformerDecoder(nn.Module):
             tuple(range(1, self.eval_idx + 1))
             if dsqc_layers is None
             else tuple(int(index) for index in dsqc_layers)
+        )
+        self.qacg = qacg
+        self.qacg_layers = (
+            (self.eval_idx,)
+            if qacg_layers is None
+            else tuple(int(index) for index in qacg_layers)
         )
         self.layers = nn.ModuleList(
             [copy.deepcopy(decoder_layer) for _ in range(self.eval_idx + 1)]
@@ -515,6 +524,23 @@ class TransformerDecoder(nn.Module):
                         inter_ref_bbox,
                         previous_ref_bbox,
                     )
+                # QACG 只在普通对象查询之间建立竞争关系。训练期的去噪查询
+                # 具有人工复制的正负组，若混入竞争集合会产生错误抑制。
+                if self.qacg is not None and i in self.qacg_layers:
+                    denoising_queries = 0
+                    if dn_meta is not None:
+                        denoising_queries = int(dn_meta["dn_num_split"][0])
+                    if denoising_queries > 0:
+                        normal_scores = self.qacg(
+                            scores[:, denoising_queries:],
+                            cls_output[:, denoising_queries:],
+                            inter_ref_bbox[:, denoising_queries:],
+                        )
+                        scores = torch.cat(
+                            (scores[:, :denoising_queries], normal_scores), dim=1
+                        )
+                    else:
+                        scores = self.qacg(scores, cls_output, inter_ref_bbox)
                 dec_out_logits.append(scores)
                 dec_out_bboxes.append(inter_ref_bbox)
                 dec_out_pred_corners.append(pred_corners)
@@ -591,6 +617,12 @@ class DFINETransformer(nn.Module):
         dsqc_max_logit_adjustment=1.0,
         dsqc_dropout=0.0,
         dsqc_layers=None,
+        use_qacg=False,
+        qacg_bottleneck_dim=64,
+        qacg_overlap_threshold=0.30,
+        qacg_max_logit_adjustment=1.0,
+        qacg_dropout=0.0,
+        qacg_layers=None,
     ):
         super().__init__()
         assert len(feat_channels) <= num_levels
@@ -638,6 +670,15 @@ class DFINETransformer(nn.Module):
                 raise ValueError(
                     "dsqc_layers 必须从第 1 层开始，且小于 num_layers；"
                     f"当前无效索引 {invalid_layers}，num_layers={num_layers}"
+                )
+
+        if qacg_layers is not None:
+            invalid_layers = [
+                int(index) for index in qacg_layers if not 0 <= int(index) < num_layers
+            ]
+            if invalid_layers:
+                raise ValueError(
+                    f"qacg_layers 包含无效层索引 {invalid_layers}，num_layers={num_layers}"
                 )
 
         assert query_select_method in ("default", "one2many", "agnostic"), ""
@@ -710,6 +751,18 @@ class DFINETransformer(nn.Module):
             if use_dsqc
             else None
         )
+        qacg = None
+        if use_qacg:
+            # 新模块初始化不能消耗后续原模型层的随机数序列，否则即使使用
+            # 相同 seed，分类头等共有参数也会获得不同初值，破坏公平消融。
+            with torch.random.fork_rng(devices=[]):
+                qacg = QualityAwareCompetitiveQueryGate(
+                    hidden_dim=hidden_dim,
+                    bottleneck_dim=qacg_bottleneck_dim,
+                    overlap_threshold=qacg_overlap_threshold,
+                    max_logit_adjustment=qacg_max_logit_adjustment,
+                    dropout=qacg_dropout,
+                )
         self.decoder = TransformerDecoder(
             hidden_dim,
             decoder_layer,
@@ -727,6 +780,8 @@ class DFINETransformer(nn.Module):
             qfbcg_layers=qfbcg_layers,
             dsqc=dsqc,
             dsqc_layers=dsqc_layers,
+            qacg=qacg,
+            qacg_layers=qacg_layers,
         )
         # denoising
         self.num_denoising = num_denoising

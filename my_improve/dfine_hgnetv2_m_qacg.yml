@@ -1,0 +1,16 @@
+# D-FINE-M + QACG 单模块消融配置。
+# QACG 仅校准最终解码层分类分数，沿用 D-FINE 原有损失体系。
+__include__: [
+  '../configs/dfine/custom/dfine_hgnetv2_m_custom.yml',
+]
+
+output_dir: ./output/dfine_hgnetv2_m_qacg
+
+DFINETransformer:
+  use_qacg: True
+  qacg_bottleneck_dim: 64
+  qacg_overlap_threshold: 0.30
+  qacg_max_logit_adjustment: 1.0
+  qacg_dropout: 0.0
+  qacg_layers: [3]
+
