@@ -45,7 +45,7 @@ from src.solver.det_engine import evaluate
 CONFIG_PATH = str(selected_model_config_path())
 
 # 只填写已经通过验证集选定的最终权重。不要根据 test 结果再更换权重。
-CHECKPOINT_PATH = Path(r"G:\b1\权重结果\改进实验dfine\qlcs_dsqc_qacg\2e-4_SD3407\best_map50.pth")
+CHECKPOINT_PATH = Path(r"G:\b1\权重结果\改进实验dfine\qlcs_dsqc_mgca\2e-4_SD3407\best_map50.pth")
 
 TEST_IMAGES_DIR = Path(r"E:\YOLO\D-FINE\datasets\mydatasets\test\images")
 TEST_ANNOTATION = Path(r"E:\YOLO\D-FINE\datasets\mydatasets\test\annotations\test.json")
@@ -59,10 +59,10 @@ DEVICE = "cuda"
 SEED = 3407
 
 # 测试结果使用独立目录，不覆盖训练或验证结果。
-TEST_OUTPUT_DIR = Path(r"G:\b1\权重结果\改进实验dfine\qlcs_dsqc_qacg\2e-4_SD3407\测试集精度")
+TEST_OUTPUT_DIR = Path(r"G:\b1\权重结果\改进实验dfine\qlcs_dsqc_mgca\2e-4_SD3407\测试集精度")
 
 # 只影响论文 TXT 中的显示名称，不参与权重加载。
-PAPER_MODEL_NAME = "qlcs_dsqc_qacg_2e-4_SD3407"
+PAPER_MODEL_NAME = "qlcs_dsqc_mgca_SD3407"
 
 # P/R/F1 固定使用仓库 Validator 的 confidence=0.50、matching IoU=0.50。
 # 下列置信度只用于统一效率测试的检测框过滤口径。

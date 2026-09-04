@@ -17,9 +17,10 @@ IMPROVEMENT_DIR = Path(__file__).resolve().parent
 # "qacg"：仅开启质量感知查询竞争门控
 # "qlcs_dsqc_qacg"：旧 QACG 累计实验，仅用于复现
 # "mgca"：仅开启多粒度上下文聚合
-# "qlcs_dsqc_mgca"：依次开启 QLCS、DSQC 和 MGCA（当前第三步累计消融）
+# "qlcs_dsqc_mgca"：旧 MGCA 累计实验，仅用于复现
+# "qlcs_dsqc_shea"：依次开启 QLCS、DSQC 和 SHEA（当前第三步累计消融）
 # "qfbcg" / "qlcs_qfbcg"：旧 QFBCG 复现实验，不建议继续作为正式方案
-IMPROVEMENT_MODE = "qlcs_dsqc_mgca"
+IMPROVEMENT_MODE = "qlcs_dsqc_shea"
 
 IMPROVEMENT_CONFIG_PATHS = {
     "qlcs": {
@@ -48,6 +49,9 @@ IMPROVEMENT_CONFIG_PATHS = {
     },
     "qlcs_dsqc_mgca": {
         "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc_mgca.yml",
+    },
+    "qlcs_dsqc_shea": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc_shea.yml",
     },
 }
 

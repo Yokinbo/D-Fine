@@ -22,6 +22,7 @@ from my_improve.qfbcg import QueryGuidedForegroundBackgroundContrastGate
 from my_improve.dsqc import DecoderStabilityQueryCalibrator
 from my_improve.qacg import QualityAwareCompetitiveQueryGate
 from my_improve.mgca import MultiGranularityContextAggregation
+from my_improve.shea import SalientHolisticEvidenceAlignment
 
 from ...core import register
 from .denoising import get_contrastive_denoising_training_group
@@ -348,6 +349,9 @@ class TransformerDecoder(nn.Module):
         dsqc_layers=None,
         qacg=None,
         qacg_layers=None,
+        shea=None,
+        shea_layers=None,
+        shea_exclude_denoising=True,
     ):
         super(TransformerDecoder, self).__init__()
         self.hidden_dim = hidden_dim
@@ -380,6 +384,13 @@ class TransformerDecoder(nn.Module):
             if qacg_layers is None
             else tuple(int(index) for index in qacg_layers)
         )
+        self.shea = shea
+        self.shea_layers = (
+            tuple(sorted({max(0, self.eval_idx - 1), self.eval_idx}))
+            if shea_layers is None
+            else tuple(int(index) for index in shea_layers)
+        )
+        self.shea_exclude_denoising = bool(shea_exclude_denoising)
         self.layers = nn.ModuleList(
             [copy.deepcopy(decoder_layer) for _ in range(self.eval_idx + 1)]
             + [copy.deepcopy(decoder_layer_wide) for _ in range(num_layers - self.eval_idx - 1)]
@@ -461,7 +472,11 @@ class TransformerDecoder(nn.Module):
             # QLCS 仅作用于普通隐藏维度的有效解码层；关闭时不进入任何额外计算。
             qlcs_details = None
             if self.qlcs is not None and i in self.qlcs_layers and i <= self.eval_idx:
-                if self.qfbcg is not None and i in self.qfbcg_layers:
+                needs_component_details = (
+                    (self.qfbcg is not None and i in self.qfbcg_layers)
+                    or (self.shea is not None and i in self.shea_layers)
+                )
+                if needs_component_details:
                     output, qlcs_details = self.qlcs(
                         output,
                         ref_points_detach,
@@ -493,6 +508,31 @@ class TransformerDecoder(nn.Module):
                         None if qlcs_details is None else qlcs_details["component_tokens"]
                     ),
                 )
+
+            # SHEA 复用 QLCS 的框内部件证据，只细化分类查询；回归/FDR
+            # 继续使用原始 output。训练期默认排除人工构造的去噪查询。
+            if self.shea is not None and i in self.shea_layers and i <= self.eval_idx:
+                if qlcs_details is None:
+                    raise RuntimeError(
+                        "SHEA 需要当前层 QLCS 返回 component_tokens；"
+                        "请确保 shea_layers 是 qlcs_layers 的子集"
+                    )
+                component_tokens = qlcs_details["component_tokens"]
+                denoising_queries = 0
+                if self.shea_exclude_denoising and dn_meta is not None:
+                    denoising_queries = int(dn_meta["dn_num_split"][0])
+                if denoising_queries > 0:
+                    if denoising_queries >= cls_output.shape[1]:
+                        raise ValueError("去噪查询数量必须小于查询总数")
+                    normal_cls_output = self.shea(
+                        cls_output[:, denoising_queries:],
+                        component_tokens[:, denoising_queries:],
+                    )
+                    cls_output = torch.cat(
+                        (cls_output[:, :denoising_queries], normal_cls_output), dim=1
+                    )
+                else:
+                    cls_output = self.shea(cls_output, component_tokens)
 
             if i == 0:
                 # Initial bounding box predictions with inverse sigmoid refinement
@@ -630,6 +670,13 @@ class DFINETransformer(nn.Module):
         mgca_norm_groups=32,
         mgca_max_residual_scale=0.25,
         mgca_dropout=0.0,
+        use_shea=False,
+        shea_bottleneck_dim=64,
+        shea_attention_temperature=0.7,
+        shea_max_residual_scale=0.15,
+        shea_dropout=0.0,
+        shea_layers=None,
+        shea_exclude_denoising=True,
     ):
         super().__init__()
         assert len(feat_channels) <= num_levels
@@ -688,6 +735,43 @@ class DFINETransformer(nn.Module):
                     f"qacg_layers 包含无效层索引 {invalid_layers}，num_layers={num_layers}"
                 )
 
+        effective_eval_idx = eval_idx if eval_idx >= 0 else num_layers + eval_idx
+        if not 0 <= effective_eval_idx < num_layers:
+            raise ValueError(f"eval_idx={eval_idx} 对 num_layers={num_layers} 无效")
+        effective_shea_layers = (
+            tuple(sorted({max(0, effective_eval_idx - 1), effective_eval_idx}))
+            if shea_layers is None
+            else tuple(int(index) for index in shea_layers)
+        )
+        if use_shea:
+            if not use_qlcs:
+                raise ValueError("SHEA 依赖 QLCS 的框内部件 token，必须同时开启 use_qlcs")
+            if len(set(effective_shea_layers)) != len(effective_shea_layers):
+                raise ValueError("shea_layers 不能包含重复层索引")
+            invalid_layers = [
+                index
+                for index in effective_shea_layers
+                if not 0 <= index <= effective_eval_idx
+            ]
+            if invalid_layers:
+                raise ValueError(
+                    "shea_layers 必须位于普通隐藏维度的有效解码层内；"
+                    f"当前无效索引 {invalid_layers}，eval_idx={effective_eval_idx}"
+                )
+            effective_qlcs_layers = (
+                set(range(effective_eval_idx + 1))
+                if qlcs_layers is None
+                else {int(index) for index in qlcs_layers}
+            )
+            missing_qlcs_layers = [
+                index for index in effective_shea_layers if index not in effective_qlcs_layers
+            ]
+            if missing_qlcs_layers:
+                raise ValueError(
+                    "shea_layers 必须是 qlcs_layers 的子集；"
+                    f"QLCS 未覆盖层 {missing_qlcs_layers}"
+                )
+
         assert query_select_method in ("default", "one2many", "agnostic"), ""
         assert cross_attn_method in ("default", "discrete"), ""
         self.cross_attn_method = cross_attn_method
@@ -698,8 +782,8 @@ class DFINETransformer(nn.Module):
 
         self.mgca = None
         if use_mgca:
-            # MGCA 是当前阶段唯一新增结构。隔离初始化随机数，确保同一 seed 下
-            # QLCS、DSQC 和原始 D-FINE 的共有参数与上一阶段获得相同初值。
+            # MGCA 仅为旧实验复现保留。隔离初始化随机数，确保同一 seed 下
+            # 其余共有参数仍获得一致初值。
             with torch.random.fork_rng(devices=[]):
                 self.mgca = MultiGranularityContextAggregation(
                     hidden_dim=hidden_dim,
@@ -785,6 +869,18 @@ class DFINETransformer(nn.Module):
                     max_logit_adjustment=qacg_max_logit_adjustment,
                     dropout=qacg_dropout,
                 )
+        shea = None
+        if use_shea:
+            # 隔离新增模块的初始化随机数，保证同 seed 下 QLCS、DSQC 和
+            # D-FINE 共有参数与上一阶段取得完全相同的初值。
+            with torch.random.fork_rng(devices=[]):
+                shea = SalientHolisticEvidenceAlignment(
+                    hidden_dim=hidden_dim,
+                    bottleneck_dim=shea_bottleneck_dim,
+                    attention_temperature=shea_attention_temperature,
+                    max_residual_scale=shea_max_residual_scale,
+                    dropout=shea_dropout,
+                )
         self.decoder = TransformerDecoder(
             hidden_dim,
             decoder_layer,
@@ -804,6 +900,9 @@ class DFINETransformer(nn.Module):
             dsqc_layers=dsqc_layers,
             qacg=qacg,
             qacg_layers=qacg_layers,
+            shea=shea,
+            shea_layers=effective_shea_layers,
+            shea_exclude_denoising=shea_exclude_denoising,
         )
         # denoising
         self.num_denoising = num_denoising

@@ -1,0 +1,16 @@
+# D-FINE-M + QLCS + DSQC + SHEA 三模块累计消融配置。
+# 直接继承已冻结的 QLCS+DSQC，仅增加分类专用的框内证据对齐分支。
+__include__: [
+  './dfine_hgnetv2_m_qlcs_dsqc.yml',
+]
+
+output_dir: ./output/dfine_hgnetv2_m_qlcs_dsqc_shea
+
+DFINETransformer:
+  use_shea: True
+  shea_bottleneck_dim: 64
+  shea_attention_temperature: 0.7
+  shea_max_residual_scale: 0.15
+  shea_dropout: 0.0
+  shea_layers: [2, 3]
+  shea_exclude_denoising: True
