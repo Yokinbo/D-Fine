@@ -1,0 +1,16 @@
+# D-FINE-M + MGCA 单模块消融配置。
+# MGCA 只增强送入解码器的 P4/P5 特征，不修改损失、匹配或预测头。
+__include__: [
+  '../configs/dfine/custom/dfine_hgnetv2_m_custom.yml',
+]
+
+output_dir: ./output/dfine_hgnetv2_m_mgca
+
+DFINETransformer:
+  use_mgca: True
+  mgca_bottleneck_dim: 64
+  mgca_target_levels: [1, 2]
+  mgca_norm_groups: 32
+  mgca_max_residual_scale: 0.25
+  mgca_dropout: 0.0
+

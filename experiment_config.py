@@ -38,10 +38,17 @@ USE_QLCS = ACTIVE_IMPROVEMENT_MODE in {
     "qlcs_qfbcg",
     "qlcs_dsqc",
     "qlcs_dsqc_qacg",
+    "qlcs_dsqc_mgca",
 }
 USE_QFBCG = ACTIVE_IMPROVEMENT_MODE in {"qfbcg", "qlcs_qfbcg"}
-USE_DSQC = ACTIVE_IMPROVEMENT_MODE in {"dsqc", "qlcs_dsqc", "qlcs_dsqc_qacg"}
+USE_DSQC = ACTIVE_IMPROVEMENT_MODE in {
+    "dsqc",
+    "qlcs_dsqc",
+    "qlcs_dsqc_qacg",
+    "qlcs_dsqc_mgca",
+}
 USE_QACG = ACTIVE_IMPROVEMENT_MODE in {"qacg", "qlcs_dsqc_qacg"}
+USE_MGCA = ACTIVE_IMPROVEMENT_MODE in {"mgca", "qlcs_dsqc_mgca"}
 
 # ENABLE_VRAC_AUGMENTATION = False：当前规模的普通 D-FINE 基线
 # ENABLE_VRAC_AUGMENTATION = True ：当前规模的 D-FINE + VRAC 训练增强

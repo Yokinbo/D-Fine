@@ -1,0 +1,16 @@
+# D-FINE-M + QLCS + DSQC + MGCA 三模块累计消融配置。
+# 直接继承已确定的 QLCS+DSQC 配置，仅增加 MGCA。
+__include__: [
+  './dfine_hgnetv2_m_qlcs_dsqc.yml',
+]
+
+output_dir: ./output/dfine_hgnetv2_m_qlcs_dsqc_mgca
+
+DFINETransformer:
+  use_mgca: True
+  mgca_bottleneck_dim: 64
+  mgca_target_levels: [1, 2]
+  mgca_norm_groups: 32
+  mgca_max_residual_scale: 0.25
+  mgca_dropout: 0.0
+

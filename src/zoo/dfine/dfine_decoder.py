@@ -21,6 +21,7 @@ from my_improve.qlcs import QueryGuidedLatentComponentSampler
 from my_improve.qfbcg import QueryGuidedForegroundBackgroundContrastGate
 from my_improve.dsqc import DecoderStabilityQueryCalibrator
 from my_improve.qacg import QualityAwareCompetitiveQueryGate
+from my_improve.mgca import MultiGranularityContextAggregation
 
 from ...core import register
 from .denoising import get_contrastive_denoising_training_group
@@ -623,6 +624,12 @@ class DFINETransformer(nn.Module):
         qacg_max_logit_adjustment=1.0,
         qacg_dropout=0.0,
         qacg_layers=None,
+        use_mgca=False,
+        mgca_bottleneck_dim=64,
+        mgca_target_levels=None,
+        mgca_norm_groups=32,
+        mgca_max_residual_scale=0.25,
+        mgca_dropout=0.0,
     ):
         super().__init__()
         assert len(feat_channels) <= num_levels
@@ -688,6 +695,21 @@ class DFINETransformer(nn.Module):
 
         # backbone feature projection
         self._build_input_proj_layer(feat_channels)
+
+        self.mgca = None
+        if use_mgca:
+            # MGCA 是当前阶段唯一新增结构。隔离初始化随机数，确保同一 seed 下
+            # QLCS、DSQC 和原始 D-FINE 的共有参数与上一阶段获得相同初值。
+            with torch.random.fork_rng(devices=[]):
+                self.mgca = MultiGranularityContextAggregation(
+                    hidden_dim=hidden_dim,
+                    bottleneck_dim=mgca_bottleneck_dim,
+                    num_levels=num_levels,
+                    target_levels=(1, 2) if mgca_target_levels is None else mgca_target_levels,
+                    norm_groups=mgca_norm_groups,
+                    max_residual_scale=mgca_max_residual_scale,
+                    dropout=mgca_dropout,
+                )
 
         # Transformer module
         self.up = nn.Parameter(torch.tensor([0.5]), requires_grad=False)
@@ -944,6 +966,11 @@ class DFINETransformer(nn.Module):
                     proj_feats.append(self.input_proj[i](feats[-1]))
                 else:
                     proj_feats.append(self.input_proj[i](proj_feats[-1]))
+
+        # 仅在展平前增强选定的二维特征层，使后续查询初始化、交叉注意力和
+        # QLCS 均使用同一份上下文增强 memory；关闭时保持原路径不变。
+        if self.mgca is not None:
+            proj_feats = self.mgca(proj_feats)
 
         # get encoder inputs
         feat_flatten = []
