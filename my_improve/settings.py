@@ -15,19 +15,11 @@ IMPROVEMENT_DIR = Path(__file__).resolve().parent
 # "dsqc"：仅开启解码稳定性感知查询校准
 # "qlcs_dsqc"：同时开启 QLCS 和 DSQC（新的第二步累计消融）
 # "qacg"：仅开启质量感知查询竞争门控
-# "qlcs_dsqc_qacg"：旧 QACG 累计实验，仅用于复现
-# "mgca"：仅开启多粒度上下文聚合
-# "qlcs_dsqc_mgca"：旧 MGCA 累计实验，仅用于复现
-# "qlcs_dsqc_shea"：旧 SHEA 实验，仅用于复现
-# "qlcs_dsqc_qcr"：QLCS + DSQC 网络，附加训练期 QCR 排序正则（待验证）
+# "qlcs_dsqc_qacg"：依次开启 QLCS、DSQC 和 QACG（第三步累计消融）
 # "qfbcg" / "qlcs_qfbcg"：旧 QFBCG 复现实验，不建议继续作为正式方案
-# QCR is an experimental training regularizer; QLCS/DSQC implementations stay fixed.
-IMPROVEMENT_MODE = "qlcs_dsqc_qcr"
+IMPROVEMENT_MODE = "dsqc"
 
 IMPROVEMENT_CONFIG_PATHS = {
-    "qlcs_dsqc_qcr": {
-        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc_qcr.yml",
-    },
     "qlcs": {
         "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs.yml",
     },
@@ -48,15 +40,6 @@ IMPROVEMENT_CONFIG_PATHS = {
     },
     "qlcs_dsqc_qacg": {
         "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc_qacg.yml",
-    },
-    "mgca": {
-        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_mgca.yml",
-    },
-    "qlcs_dsqc_mgca": {
-        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc_mgca.yml",
-    },
-    "qlcs_dsqc_shea": {
-        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc_shea.yml",
     },
 }
 

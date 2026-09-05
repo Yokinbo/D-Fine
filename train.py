@@ -64,9 +64,9 @@ INPUT_SIZE = MODEL_IMAGE_SIZE
 TRAIN_BATCH_SIZE = 6
 VAL_BATCH_SIZE = 6
 NUM_WORKERS = 2  # Windows 上建议 0~2；若 DataLoader 异常可改为 0
-EPOCHS = 100
+EPOCHS = 150
 # 前 180 轮使用颜色、模糊、噪声、外扩和 VRAC，最后 20 轮用干净样本稳定收敛。
-AUGMENTATION_STOP_EPOCH = 90
+AUGMENTATION_STOP_EPOCH = 135
 
 #EPOCHS和AUGMENTATION_STOP_EPOCH的关系：                       EPOCHS=200时，AUGMENTATION_STOP_EPOCH=180；
 #EPOCHS=40时，AUGMENTATION_STOP_EPOCH=36；                      EPOCHS = 240     150
@@ -74,7 +74,7 @@ AUGMENTATION_STOP_EPOCH = 90
 #快速测试时应用EPOCHS=40、AUGMENTATION_STOP_EPOCH=36。
 
 # 训练结果输出目录：每次 S/M/L/X、基线/改进实验请填写独立绝对路径。
-OUTPUT_DIR = r"E:\YOLO\D-FINE\output\qlcs_dsqc_qcr\2e-4_SD3407"
+OUTPUT_DIR = r"E:\YOLO\D-FINE\output\dsqc\2e-4_SD3407"
 
 SEED = 3407                      #18、2026、3407
 DEVICE = "cuda"
