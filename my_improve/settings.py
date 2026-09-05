@@ -18,11 +18,16 @@ IMPROVEMENT_DIR = Path(__file__).resolve().parent
 # "qlcs_dsqc_qacg"：旧 QACG 累计实验，仅用于复现
 # "mgca"：仅开启多粒度上下文聚合
 # "qlcs_dsqc_mgca"：旧 MGCA 累计实验，仅用于复现
-# "qlcs_dsqc_shea"：依次开启 QLCS、DSQC 和 SHEA（当前第三步累计消融）
+# "qlcs_dsqc_shea"：旧 SHEA 实验，仅用于复现
+# "qlcs_dsqc_qcr"：QLCS + DSQC 网络，附加训练期 QCR 排序正则（待验证）
 # "qfbcg" / "qlcs_qfbcg"：旧 QFBCG 复现实验，不建议继续作为正式方案
-IMPROVEMENT_MODE = "qlcs_dsqc_shea"
+# QCR is an experimental training regularizer; QLCS/DSQC implementations stay fixed.
+IMPROVEMENT_MODE = "qlcs_dsqc_qcr"
 
 IMPROVEMENT_CONFIG_PATHS = {
+    "qlcs_dsqc_qcr": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc_qcr.yml",
+    },
     "qlcs": {
         "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs.yml",
     },

@@ -41,6 +41,7 @@ def train_one_epoch(
     criterion.train()
     metric_logger = MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
+    qcr_logger = MetricLogger(delimiter="  ")
 
     epochs = kwargs.get("epochs", None)
     header = "Epoch: [{}]".format(epoch) if epochs is None else "Epoch: [{}/{}]".format(epoch, epochs)
@@ -134,12 +135,26 @@ def train_one_epoch(
         metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
+        # Detached diagnostics are NOT optimization losses. Persist their epoch
+        # averages to log.txt, and detailed values to TensorBoard for pilot runs.
+        qcr_stats = getattr(criterion, "qcr_stats", {})
+        if qcr_stats:
+            qcr_stats = dist_utils.reduce_dict(qcr_stats)
+            qcr_weighted = loss_dict_reduced["loss_qcr"].detach()
+            qcr_stats["weighted"] = qcr_weighted
+            if "loss_vfl" in loss_dict_reduced:
+                qcr_stats["vfl_ratio"] = qcr_weighted / loss_dict_reduced["loss_vfl"].detach().clamp_min(1e-8)
+            qcr_logger.update(**qcr_stats)
+            metric_logger.update(qcr_loss=qcr_weighted, qcr_pairs=qcr_stats["pairs"])
+
         if writer and dist_utils.is_main_process() and global_step % 10 == 0:
             writer.add_scalar("Loss/total", loss_value.item(), global_step)
             for j, pg in enumerate(optimizer.param_groups):
                 writer.add_scalar(f"Lr/pg_{j}", pg["lr"], global_step)
             for k, v in loss_dict_reduced.items():
                 writer.add_scalar(f"Loss/{k}", v.item(), global_step)
+            for k, v in qcr_stats.items():
+                writer.add_scalar(f"QCR/{k}", v.item(), global_step)
 
     if use_wandb:
         wandb.log(
@@ -148,7 +163,12 @@ def train_one_epoch(
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    result = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    if qcr_logger.meters:
+        qcr_logger.synchronize_between_processes()
+        print("QCR diagnostics:", qcr_logger)
+        result.update({f"qcr_{k}": meter.global_avg for k, meter in qcr_logger.meters.items()})
+    return result
 
 
 @torch.no_grad()

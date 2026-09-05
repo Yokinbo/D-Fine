@@ -1,0 +1,15 @@
+# Experimental training-only regularizer; inference is exactly QLCS + DSQC.
+__include__: ['./dfine_hgnetv2_m_qlcs_dsqc.yml']
+
+# This experimental selector/regularizer intentionally supports one class only.
+num_classes: 1
+output_dir: ./output/dfine_hgnetv2_m_qlcs_dsqc_qcr
+
+DFINECriterion:
+  use_qcr: True
+  qcr_weight: 0.2
+  qcr_topk: 8
+  qcr_margin: 0.5
+  qcr_positive_iou: 0.5
+  qcr_negative_iou: 0.3
+  qcr_warmup_epochs: 5

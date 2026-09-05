@@ -7,12 +7,15 @@ Copyright (c) 2023 lyuwenyu. All Rights Reserved.
 """
 
 import copy
+import math
 
 import torch
 import torch.distributed
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
+
+from my_improve.qcr import QualityConstrainedRanking
 
 from ...core import register
 from ...misc.dist_utils import get_world_size, is_dist_available_and_initialized
@@ -42,6 +45,13 @@ class DFINECriterion(nn.Module):
         reg_max=32,
         boxes_weight_format=None,
         share_matched_indices=False,
+        use_qcr=False,
+        qcr_weight=0.2,
+        qcr_topk=8,
+        qcr_margin=0.5,
+        qcr_positive_iou=0.5,
+        qcr_negative_iou=0.3,
+        qcr_warmup_epochs=5,
     ):
         """Create the criterion.
         Parameters:
@@ -65,6 +75,18 @@ class DFINECriterion(nn.Module):
         self.own_targets, self.own_targets_dn = None, None
         self.reg_max = reg_max
         self.num_pos, self.num_neg = None, None
+        if not math.isfinite(qcr_weight) or qcr_weight < 0:
+            raise ValueError("qcr_weight must be finite and nonnegative")
+        if not math.isfinite(qcr_warmup_epochs) or qcr_warmup_epochs < 0:
+            raise ValueError("qcr_warmup_epochs must be finite and nonnegative")
+        if use_qcr and num_classes != 1:
+            raise ValueError("QCR is currently designed for single-class detection")
+        self.qcr = QualityConstrainedRanking(
+            qcr_topk, qcr_margin, qcr_positive_iou, qcr_negative_iou
+        ) if use_qcr else None
+        self.qcr_weight = qcr_weight
+        self.qcr_warmup_epochs = qcr_warmup_epochs
+        self.qcr_stats = {}
 
     def loss_labels_focal(self, outputs, targets, indices, num_boxes):
         assert "pred_logits" in outputs
@@ -334,6 +356,22 @@ class DFINECriterion(nn.Module):
             l_dict = self.get_loss(loss, outputs, targets, indices_in, num_boxes_in, **meta)
             l_dict = {k: l_dict[k] * self.weight_dict[k] for k in l_dict if k in self.weight_dict}
             losses.update(l_dict)
+
+        # QCR is applied ONCE to final normal queries, never auxiliary/encoder/DN.
+        # Do not put it in self.losses: that list is repeated for all those heads.
+        self.qcr_stats = {}
+        if self.training and self.qcr is not None and self.qcr_weight > 0:
+            if "epoch" not in kwargs:
+                raise ValueError("QCR training requires epoch metadata for its warmup")
+            factor = self.qcr.warmup_factor(
+                kwargs["epoch"], kwargs.get("step", 0), kwargs.get("epoch_step", 1),
+                self.qcr_warmup_epochs,
+            )
+            raw_qcr, self.qcr_stats = self.qcr(outputs, targets, indices, indices_go)
+            if not torch.isfinite(raw_qcr):
+                raise FloatingPointError("Non-finite QCR loss; check logits and sample geometry")
+            losses["loss_qcr"] = raw_qcr * self.qcr_weight * factor
+            self.qcr_stats["scale"] = raw_qcr.new_tensor(self.qcr_weight * factor)
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:

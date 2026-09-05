@@ -34,6 +34,7 @@ USE_VRAC_AUGMENTATION = ENABLE_VRAC_AUGMENTATION
 # 状态直接由 my_improve/settings.py 生成，请勿在这里单独修改。
 ACTIVE_IMPROVEMENT_MODE = normalized_improvement_mode()
 USE_QLCS = ACTIVE_IMPROVEMENT_MODE in {
+    "qlcs_dsqc_qcr",
     "qlcs",
     "qlcs_qfbcg",
     "qlcs_dsqc",
@@ -43,6 +44,7 @@ USE_QLCS = ACTIVE_IMPROVEMENT_MODE in {
 }
 USE_QFBCG = ACTIVE_IMPROVEMENT_MODE in {"qfbcg", "qlcs_qfbcg"}
 USE_DSQC = ACTIVE_IMPROVEMENT_MODE in {
+    "qlcs_dsqc_qcr",
     "dsqc",
     "qlcs_dsqc",
     "qlcs_dsqc_qacg",
@@ -52,6 +54,7 @@ USE_DSQC = ACTIVE_IMPROVEMENT_MODE in {
 USE_QACG = ACTIVE_IMPROVEMENT_MODE in {"qacg", "qlcs_dsqc_qacg"}
 USE_MGCA = ACTIVE_IMPROVEMENT_MODE in {"mgca", "qlcs_dsqc_mgca"}
 USE_SHEA = ACTIVE_IMPROVEMENT_MODE == "qlcs_dsqc_shea"
+USE_QCR = ACTIVE_IMPROVEMENT_MODE == "qlcs_dsqc_qcr"
 
 # ENABLE_VRAC_AUGMENTATION = False：当前规模的普通 D-FINE 基线
 # ENABLE_VRAC_AUGMENTATION = True ：当前规模的 D-FINE + VRAC 训练增强
