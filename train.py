@@ -75,7 +75,7 @@ AUGMENTATION_STOP_EPOCH = 135
 #快速测试时应用EPOCHS=40、AUGMENTATION_STOP_EPOCH=36。
 
 # 训练结果输出目录：每次 S/M/L/X、基线/改进实验请填写独立绝对路径。
-OUTPUT_DIR = r"E:\YOLO\D-FINE\output\dsqc_csga\2e-4_SD3407"
+OUTPUT_DIR = r"E:\YOLO\D-FINE\output\dsqc_qcr\2e-4_SD3407"
 
 SEED = 3407                      #18、2026、3407
 DEVICE = "cuda"

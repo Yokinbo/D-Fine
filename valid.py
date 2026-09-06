@@ -47,7 +47,7 @@ CONFIG_PATH = str(selected_model_config_path())
 # 应用验证默认使用 mAP@0.5 最优的 best_map50.pth。也可改为
 # best_map5095.pth、best_f1_fixed.pth 或 best_stg2.pth 进行同口径对比。
 # 火电厂正式应用权重：CHECKPOINT_PATH = r"F:\3能源金三角基础设施识别\1模型推理应用可用权重\best_map50.pth"
-CHECKPOINT_PATH = r"G:\b1\权重结果\改进实验dfine\dsqc\2e-4_SD3407\best_map50.pth"
+CHECKPOINT_PATH = r"G:\b1\权重结果\改进实验dfine\dsqc_csga\2e-4_SD3407\best_map50.pth"
 
 # 验证影像目录和对应的 COCO JSON 标注文件。先运行 myscript/yolo2coco.py。
 VAL_IMAGES_DIR = Path(r"E:\YOLO\D-FINE\datasets\mydatasets\val\images")
@@ -62,7 +62,7 @@ DEVICE = "cuda"
 SEED = 3407
 
 # 验证结果保存到单独目录，不覆盖训练过程中的输出文件。
-VALID_OUTPUT_DIR = r"G:\b1\权重结果\改进实验dfine\dsqc\2e-4_SD3407\验证集精度"
+VALID_OUTPUT_DIR = r"G:\b1\权重结果\改进实验dfine\dsqc_csga\2e-4_SD3407\验证集精度"
 
 # 只控制“论文指标.txt”中的显示名称，不参与模型结构或权重加载。
 PAPER_MODEL_NAME = "dsqc_SD3407"

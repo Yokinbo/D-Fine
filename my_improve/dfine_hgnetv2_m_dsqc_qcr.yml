@@ -1,0 +1,25 @@
+# Controlled DSQC -> DSQC + QCR comparison; no inference module added.
+__include__: ['./dfine_hgnetv2_m_dsqc.yml']
+
+num_classes: 1
+output_dir: ./output/dfine_hgnetv2_m_dsqc_qcr
+
+HybridEncoder:
+  use_csga: False
+
+DFINETransformer:
+  use_qlcs: False
+  use_qfbcg: False
+  use_qacg: False
+  use_mgca: False
+  use_shea: False
+
+# Identical QCR hyperparameters to the archived QLCS+DSQC+QCR experiment.
+DFINECriterion:
+  use_qcr: True
+  qcr_weight: 0.2
+  qcr_topk: 8
+  qcr_margin: 0.5
+  qcr_positive_iou: 0.5
+  qcr_negative_iou: 0.3
+  qcr_warmup_epochs: 5

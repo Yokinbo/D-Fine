@@ -1,5 +1,12 @@
 # D-FINE 火力发电厂检测改进实验
 
+## 最新实验：DSQC + QCR
+
+当前开关为 `dsqc_qcr`：仅DSQC网络，加训练期QCR排序正则；QLCS/CSGA及其他模块关闭。
+新增独立配置，不修改DSQC或QCR算法与超参数。训练输出为 `output/dsqc_qcr/2e-4_SD3407`。
+DSQC+CSGA验证均值AP50/F1为0.9262/0.8549，未超过仅DSQC的0.9291/0.8596，保留为历史实验。
+以[DSQC+QCR实验计划](DSQC_QCR_EXPERIMENT.md)为当前依据，以下各阶段说明保留用于复现。
+
 本目录集中保存论文网络改进的实现、统一开关和消融 YAML。训练、验证和测试
 均通过 `settings.py` 选择同一结构，避免权重与模型配置不一致。
 

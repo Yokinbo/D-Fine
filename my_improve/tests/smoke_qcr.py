@@ -3,6 +3,8 @@
 Run: python -m my_improve.tests.smoke_qcr
 """
 
+import argparse
+
 import torch
 
 from src.core import YAMLConfig
@@ -10,11 +12,15 @@ from src.solver.det_engine import train_one_epoch
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--reference", choices=("dsqc", "qlcs_dsqc"), default="dsqc")
+    args = parser.parse_args()
     torch.set_num_threads(2)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     options = dict(num_classes=1, eval_spatial_size=[512, 512], HGNetv2={"pretrained": False})
-    reference = YAMLConfig("my_improve/dfine_hgnetv2_m_qlcs_dsqc.yml", **options)
-    candidate = YAMLConfig("my_improve/dfine_hgnetv2_m_qlcs_dsqc_qcr.yml", **options)
+    reference = YAMLConfig(f"my_improve/dfine_hgnetv2_m_{args.reference}.yml", **options)
+    candidate = YAMLConfig(f"my_improve/dfine_hgnetv2_m_{args.reference}_qcr.yml", **options)
+    print(f"Comparison: {args.reference} -> {args.reference}_qcr")
     torch.manual_seed(3407)
     original_model = reference.model.eval()
     torch.manual_seed(3407)
