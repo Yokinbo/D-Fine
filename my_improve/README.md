@@ -3,6 +3,16 @@
 本目录集中保存论文网络改进的实现、统一开关和消融 YAML。训练、验证和测试
 均通过 `settings.py` 选择同一结构，避免权重与模型配置不一致。
 
+## 当前实验：DSQC + CSGA
+
+仅DSQC三次验证均值AP50/F1为0.9291/0.8596，高于原QLCS+DSQC的0.9224/0.8509。
+因此当前切换为 `dsqc_csga`：DSQC与CSGA开启，QLCS及其余改进关闭。
+配置直接继承仅DSQC，不修改两个模块的实现和超参数。下一步与仅DSQC同种子配对，
+不再以较弱的双模块组作为成功标准。具体见[当前实验计划](DSQC_CSGA_EXPERIMENT.md)。
+
+以下保留上一阶段QLCS+DSQC及三模块方案的历史说明，旧配置均可复现；其中的
+“当前”及保留判据属于当时计划，最新选择以本节和上述实验计划为准。
+
 ## 保留的参照方案：QLCS + DSQC
 
 - `qlcs.py`：查询引导的隐式部件采样（QLCS）。在仅有整厂框标注的条件下，
@@ -11,9 +21,9 @@
 - `dsqc.py`：解码稳定性感知查询校准（DSQC）。比较倒数第二层与最后一层中
   同一查询的语义表示、预测框 IoU、中心和尺度变化，再对最终分类 logits 做
   有界残差校准。三随机种子结果显示，该模块主要改善测试集 P、R 和 F1。
-- 新候选 `qcr.py`：质量约束排序正则（Quality-Constrained Ranking，QCR）。
-  只在训练期约束可靠目标与低重叠困难负样本的置信排序；推理网络仍为
-  QLCS+DSQC。尚无精度提升结论，不列为已验证的正式改进。
+- 新候选 `csga.py`：跨尺度引导对齐（Cross-Scale Guided Alignment，CSGA）。
+  在 FPN 两次上采样处，用高低层特征预测有界采样偏移，以零初始化残差接入。
+  当前直接开启 QLCS+DSQC+CSGA；尚无真实训练精度结论。
 
 这里的“冻结保留”指 QLCS/DSQC 的实现、结构和超参数不改；不是冻结它们的
 可训练权重。每个消融实验仍从相同官方预训练权重开始，正常训练全部网络。
@@ -22,11 +32,11 @@ DSQC 只接入最终解码层，几何稳定性信号全部停止梯度，不修
 回归路径和输出框。校准头末层使用零初始化，首次加载官方预训练权重时等价于
 未启用 DSQC 的分类输出，降低新模块破坏既有 QLCS 能力的风险。
 
-QCR 保留 VFL、FDR、GO-LSD 和匹配器，只额外计算一次最终正常查询的训练损失；
-不修改辅助层、编码器、DN 损失，也没有新的推理参数或算子。实现公式、文献依据、
-风险与实验判据见 [QCR_EXPERIMENT.md](QCR_EXPERIMENT.md)。
+CSGA 保留 VFL、FDR、GO-LSD、匹配器和原解码器逻辑；只替换特征融合前两处
+nearest 上采样。QLCS/DSQC 的实现与配置均未改。设计依据、限制与实验计划见
+[CSGA_EXPERIMENT.md](CSGA_EXPERIMENT.md)。
 
-## 已归档的 QFBCG、QACG、MGCA 与 SHEA
+## 已归档的 QFBCG、QACG、MGCA、SHEA 与 QCR
 
 `qfbcg.py` 及其 YAML 仅为复现已完成实验而保留，不再是当前正式方案。三随机种子
 结果显示，QLCS+QFBCG 相比 QLCS 的验证集 P、F1、AP75 和 mAP50:95 均下降，
@@ -48,6 +58,11 @@ AP50/P/F1 为 0.9134/0.8173/0.8448，也低于前一阶段的
 0.9200/0.8047/0.8970/0.8478；测试均值为
 0.9072/0.8333/0.8865/0.8590。相较 QLCS+DSQC 未满足核心指标目标，当前关闭。
 
+`qcr.py` 及其 YAML 保留复现。三次验证均值 AP50/P/R/F1/AP75/mAP50:95 为
+0.9229/0.8223/0.8767/0.8486/0.5771/0.5828；相对双模块 P 略升、R/F1下降，
+未满足核心目标。当前关闭，不继续叠加到 CSGA；[旧设计记录](QCR_EXPERIMENT.md)
+只作归档，其中“待验证”的描述代表当时状态。
+
 ## 统一开关
 
 在 `settings.py` 修改 `IMPROVEMENT_MODE`：
@@ -57,19 +72,22 @@ AP50/P/F1 为 0.9134/0.8173/0.8448，也低于前一阶段的
 | `baseline` | 原始 D-FINE-M | 基线 |
 | `qlcs` | D-FINE-M + QLCS | 已完成的第一模块消融 |
 | `dsqc` | D-FINE-M + DSQC | 新第二模块独立消融 |
+| `dsqc_csga` | D-FINE-M + DSQC + CSGA | 最新待验证候选 |
 | `qlcs_dsqc` | D-FINE-M + QLCS + DSQC | 已完成的第二步累计消融 |
 | `qacg` | D-FINE-M + QACG | 旧失败实验复现 |
 | `qlcs_dsqc_qacg` | D-FINE-M + QLCS + DSQC + QACG | 旧失败实验复现 |
 | `mgca` | D-FINE-M + MGCA | 旧失败实验复现 |
 | `qlcs_dsqc_mgca` | D-FINE-M + QLCS + DSQC + MGCA | 旧失败实验复现 |
 | `qlcs_dsqc_shea` | D-FINE-M + QLCS + DSQC + SHEA | 旧实验复现 |
-| `qlcs_dsqc_qcr` | QLCS + DSQC 网络，训练时附加 QCR | 当前待验证候选 |
+| `qlcs_dsqc_qcr` | QLCS + DSQC 网络，训练时附加 QCR | 旧实验复现 |
+| `qlcs_dsqc_csga` | QLCS + DSQC + CSGA | 当前待验证候选 |
 | `qfbcg` | D-FINE-M + QFBCG | 旧失败实验复现 |
 | `qlcs_qfbcg` | D-FINE-M + QLCS + QFBCG | 旧失败实验复现 |
 
-当前选择为 `qlcs_dsqc_qcr`，对应配置
-`dfine_hgnetv2_m_qlcs_dsqc_qcr.yml`。直接继承 QLCS+DSQC 的配置；
-QFBCG、QACG、MGCA、SHEA 均关闭。QCR 系数、候选数和渐入轮数均放在该 YAML。
+当前选择为 `qlcs_dsqc_csga`，对应配置
+`dfine_hgnetv2_m_qlcs_dsqc_csga.yml`。直接继承 QLCS+DSQC 的配置；
+QFBCG、QACG、MGCA、SHEA、QCR 均关闭。CSGA 分组数、偏移和残差上限放在该 YAML。
+仅 DSQC 的 `dsqc` 模式与原配置未改，另一台电脑可继续完成该独立消融。
 
 旧 SHEA 的设计来源（仅用于复现记录）：
 
@@ -83,16 +101,17 @@ SHEA 受 [Decoupled DETR（ICCV 2023）](https://openaccess.thecvf.com/content/I
 1. 保持 `MODEL_SIZE = "m"`、VRAC 关闭、学习率 `2e-4`，其余训练设置与既有
    基线和 QLCS 实验完全一致。
 2. 所有模型从同一官方 D-FINE-M 预训练权重重新训练，不从 QLCS 权重继续训练。
-3. 先用种子 3407 训练 `qlcs_dsqc_qcr`，检查头 5～10 轮 QCR 样本数和损失量级；
-   这是实现/激活检查，不据此断言精度成功或失败。不在途中反复调参。
+3. 先用种子 3407 训练 `qlcs_dsqc_csga`，检查头 5～10 轮 `csga_mix_*` 和
+   `csga_offset_*` 是否离开0；这是激活检查，不据此断言精度成功或失败。
+   不在途中反复调参，关闭 QCR 与旧第三模块。
 4. 首轮按原定 150 轮完成，与同种子 QLCS+DSQC 配对比较。有潜力后补种子
    18、2026，报告均值、样本标准差和每种子变化。若根据首轮调整配置，它属于
    新候选实验，不能与旧配置混合平均。
 5. 正式顺序消融表建议为
-   `baseline → +QLCS → +QLCS+DSQC → +QLCS+DSQC（训练加QCR）`。
+   `baseline → +QLCS → +QLCS+DSQC → +QLCS+DSQC+CSGA`。
    未通过时最后一行可作为无效尝试记录，不能强行写为有效创新。
 
-## 判定 QCR 是否保留
+## 判定 CSGA 是否保留
 
 采用重新验证后的 QLCS+DSQC 三次验证均值：AP50 0.9224、P 0.8181、
 R 0.8869、F1 0.8509、AP75 0.5871、mAP50:95 0.5837。以下为预先约定的
@@ -105,8 +124,8 @@ R 0.8869、F1 0.8509、AP75 0.5871、mAP50:95 0.5837。以下为预先约定的
   理想增益为 P 至少提高 0.010、F1 至少提高 0.005；
 - 至少两个随机种子的 P/F1 同向改善，不能依赖单个最好结果；
 - P 的提高不能以 AP50 或 R 明显下降为代价；
-- QCR 推理参数/FLOPs 与 QLCS+DSQC 相同；训练耗时会增加，实际 FPS 仍须
-  在相同硬件、输入、精度模式和测速口径下测量，不能凭结构相同伪造时间。
+- CSGA 新增20,568参数，训练/推理都有新计算；实际 FPS 应在相同硬件、输入、
+  精度模式和测速口径下测量，不能用参数增量代替速度测试。
 
 继续设计与筛选只用训练/验证集。只查看测试数据不会改动权重，但若测试结果影响
 模块去留或下一版设计，它就参与了选择；旧测试集不能再声称是完全未参与选择的

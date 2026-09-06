@@ -1,0 +1,20 @@
+# Controlled comparison against DSQC alone. Keep DSQC and all original losses.
+__include__: ['./dfine_hgnetv2_m_dsqc.yml']
+
+output_dir: ./output/dfine_hgnetv2_m_dsqc_csga
+
+HybridEncoder:
+  use_csga: True
+  csga_groups: 4
+  csga_max_offset: 0.25
+  csga_max_residual: 0.5
+
+DFINETransformer:
+  use_qlcs: False
+  use_qfbcg: False
+  use_qacg: False
+  use_mgca: False
+  use_shea: False
+
+DFINECriterion:
+  use_qcr: False

@@ -36,6 +36,7 @@ from experiment_config import (
     USE_QLCS,
     USE_SHEA,
     USE_QCR,
+    USE_CSGA,
     USE_VRAC_AUGMENTATION,
     selected_model_config_path,
 )
@@ -74,7 +75,7 @@ AUGMENTATION_STOP_EPOCH = 135
 #快速测试时应用EPOCHS=40、AUGMENTATION_STOP_EPOCH=36。
 
 # 训练结果输出目录：每次 S/M/L/X、基线/改进实验请填写独立绝对路径。
-OUTPUT_DIR = r"E:\YOLO\D-FINE\output\dsqc\2e-4_SD3407"
+OUTPUT_DIR = r"E:\YOLO\D-FINE\output\dsqc_csga\2e-4_SD3407"
 
 SEED = 3407                      #18、2026、3407
 DEVICE = "cuda"
@@ -210,6 +211,7 @@ def print_user_config(args) -> None:
         f"MGCA模块: {'开启' if USE_MGCA else '关闭'} | "
         f"SHEA模块: {'开启' if USE_SHEA else '关闭'} | "
         f"QCR训练正则: {'开启' if USE_QCR else '关闭'} | "
+        f"CSGA特征对齐: {'开启' if USE_CSGA else '关闭'} | "
         f"网络改进模式: {ACTIVE_IMPROVEMENT_MODE} | "
         f"VRAC增强: {'开启' if USE_VRAC_AUGMENTATION else '关闭'}"
     )

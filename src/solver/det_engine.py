@@ -135,6 +135,23 @@ def train_one_epoch(
         metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
+        # Optional FPN alignment diagnostics; never add these to loss_dict.
+        csga_stats = {}
+        encoder = getattr(dist_utils.de_parallel(model), "encoder", None)
+        upsamplers = getattr(encoder, "csga_upsamplers", None)
+        if upsamplers is not None:
+            for stage, upsampler in enumerate(upsamplers):
+                csga_stats[f"csga_mix_{stage}"] = (
+                    upsampler.max_residual * upsampler.gate.detach().tanh()
+                ).abs().mean()
+                if upsampler.last_offset_abs is not None:
+                    csga_stats[f"csga_offset_{stage}"] = upsampler.last_offset_abs
+            csga_stats = dist_utils.reduce_dict(csga_stats)
+            for key in csga_stats:
+                if key not in metric_logger.meters:
+                    metric_logger.add_meter(key, SmoothedValue(fmt="{value:.2e} ({global_avg:.2e})"))
+            metric_logger.update(**csga_stats)
+
         # Detached diagnostics are NOT optimization losses. Persist their epoch
         # averages to log.txt, and detailed values to TensorBoard for pilot runs.
         qcr_stats = getattr(criterion, "qcr_stats", {})
@@ -155,6 +172,8 @@ def train_one_epoch(
                 writer.add_scalar(f"Loss/{k}", v.item(), global_step)
             for k, v in qcr_stats.items():
                 writer.add_scalar(f"QCR/{k}", v.item(), global_step)
+            for k, v in csga_stats.items():
+                writer.add_scalar(f"CSGA/{k}", v.item(), global_step)
 
     if use_wandb:
         wandb.log(

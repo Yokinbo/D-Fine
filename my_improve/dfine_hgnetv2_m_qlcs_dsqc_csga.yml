@@ -1,0 +1,20 @@
+# Third-stage candidate: preserve QLCS/DSQC settings; change only FPN upsampling.
+__include__: ['./dfine_hgnetv2_m_qlcs_dsqc.yml']
+
+output_dir: ./output/dfine_hgnetv2_m_qlcs_dsqc_csga
+
+HybridEncoder:
+  use_csga: True
+  csga_groups: 4
+  csga_max_offset: 0.25
+  csga_max_residual: 0.5
+
+# Explicitly exclude archived third experiments for a single-factor ablation.
+DFINETransformer:
+  use_qfbcg: False
+  use_qacg: False
+  use_mgca: False
+  use_shea: False
+
+DFINECriterion:
+  use_qcr: False

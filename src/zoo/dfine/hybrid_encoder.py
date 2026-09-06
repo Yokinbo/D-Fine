@@ -13,6 +13,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from my_improve.csga import CrossScaleGuidedAlignment
+
 from ...core import register
 from .utils import get_activation
 
@@ -331,6 +333,10 @@ class HybridEncoder(nn.Module):
         depth_mult=1.0,
         act="silu",
         eval_spatial_size=None,
+        use_csga=False,
+        csga_groups=4,
+        csga_max_offset=0.25,
+        csga_max_residual=0.5,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -411,6 +417,13 @@ class HybridEncoder(nn.Module):
 
         self._reset_parameters()
 
+        # Optional third improvement: align the two top-down FPN upsamplers.
+        # Existing concat, fusion blocks, PAN and decoder are left unchanged.
+        self.csga_upsamplers = nn.ModuleList([
+            CrossScaleGuidedAlignment(hidden_dim, csga_groups, csga_max_offset, csga_max_residual)
+            for _ in range(len(in_channels) - 1)
+        ]) if use_csga else None
+
     def _reset_parameters(self):
         if self.eval_spatial_size:
             for idx in self.use_encoder_idx:
@@ -471,7 +484,12 @@ class HybridEncoder(nn.Module):
             feat_low = proj_feats[idx - 1]
             feat_heigh = self.lateral_convs[len(self.in_channels) - 1 - idx](feat_heigh)
             inner_outs[0] = feat_heigh
-            upsample_feat = F.interpolate(feat_heigh, scale_factor=2.0, mode="nearest")
+            if self.csga_upsamplers is None:
+                upsample_feat = F.interpolate(feat_heigh, scale_factor=2.0, mode="nearest")
+            else:
+                upsample_feat = self.csga_upsamplers[len(self.in_channels) - 1 - idx](
+                    feat_heigh, feat_low
+                )
             inner_out = self.fpn_blocks[len(self.in_channels) - 1 - idx](
                 torch.concat([upsample_feat, feat_low], dim=1)
             )

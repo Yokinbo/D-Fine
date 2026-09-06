@@ -17,9 +17,29 @@ IMPROVEMENT_DIR = Path(__file__).resolve().parent
 # "qacg"：仅开启质量感知查询竞争门控
 # "qlcs_dsqc_qacg"：依次开启 QLCS、DSQC 和 QACG（第三步累计消融）
 # "qfbcg" / "qlcs_qfbcg"：旧 QFBCG 复现实验，不建议继续作为正式方案
-IMPROVEMENT_MODE = "dsqc"
+# "qlcs_dsqc_csga": QLCS + DSQC + cross-scale guided alignment (experimental).    待训练
+# "dsqc_csga": DSQC + CSGA, QLCS disabled; next validation ablation.
+IMPROVEMENT_MODE = "dsqc_csga"
 
 IMPROVEMENT_CONFIG_PATHS = {
+    "dsqc_csga": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_dsqc_csga.yml",
+    },
+    "qlcs_dsqc_csga": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc_csga.yml",
+    },
+    "qlcs_dsqc_qcr": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc_qcr.yml",
+    },
+    "qlcs_dsqc_shea": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc_shea.yml",
+    },
+    "mgca": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_mgca.yml",
+    },
+    "qlcs_dsqc_mgca": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs_dsqc_mgca.yml",
+    },
     "qlcs": {
         "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_qlcs.yml",
     },
