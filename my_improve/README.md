@@ -1,16 +1,28 @@
 # D-FINE 火力发电厂检测改进实验
 
-## 最新实验：DSQC + QCR
+## 最新实验：DSQC + RBA（2026-09-08，尚未验证精度）
+
+当前 `settings.py` 开关为 `dsqc_rba`：DSQC 保持原实现，附加训练期相对边界对齐
+（Relative Boundary Alignment，RBA）。QLCS、QCR、CSGA 和其他旧候选关闭，但代码保留。
+RBA 只约束最终普通查询中与 GO 回归分配一致的匹配框，不修改原损失定义、匹配器、
+推理结构、数据集、阈值或后处理。新增损失仍会通过反向传播改变训练后的权重。
+
+运行 `python train.py`，默认种子 3407，输出 `output/dsqc_rba/2e-4_SD3407`。
+完整设计、来源、诊断日志和预先约定的判据见 [RBA 实验计划](RBA_EXPERIMENT.md)。
+单独 `rba` 模式也已支持，以便后续完成 `baseline / dsqc / rba / dsqc_rba` 四组消融。
+实现测试通过不等于精度提升；下面所有旧阶段的“当前”和“待验证”均为历史记录。
+
+## 历史实验：DSQC + QCR
 
 当前开关为 `dsqc_qcr`：仅DSQC网络，加训练期QCR排序正则；QLCS/CSGA及其他模块关闭。
 新增独立配置，不修改DSQC或QCR算法与超参数。训练输出为 `output/dsqc_qcr/2e-4_SD3407`。
 DSQC+CSGA验证均值AP50/F1为0.9262/0.8549，未超过仅DSQC的0.9291/0.8596，保留为历史实验。
-以[DSQC+QCR实验计划](DSQC_QCR_EXPERIMENT.md)为当前依据，以下各阶段说明保留用于复现。
+旧计划见[DSQC+QCR实验计划](DSQC_QCR_EXPERIMENT.md)，以下各阶段说明保留用于复现。
 
 本目录集中保存论文网络改进的实现、统一开关和消融 YAML。训练、验证和测试
 均通过 `settings.py` 选择同一结构，避免权重与模型配置不一致。
 
-## 当前实验：DSQC + CSGA
+## 历史实验：DSQC + CSGA
 
 仅DSQC三次验证均值AP50/F1为0.9291/0.8596，高于原QLCS+DSQC的0.9224/0.8509。
 因此当前切换为 `dsqc_csga`：DSQC与CSGA开启，QLCS及其余改进关闭。
@@ -77,9 +89,12 @@ AP50/P/F1 为 0.9134/0.8173/0.8448，也低于前一阶段的
 | 模式 | 网络结构 | 用途 |
 |---|---|---|
 | `baseline` | 原始 D-FINE-M | 基线 |
+| `rba` | 原始 D-FINE-M，附加 RBA 训练正则 | 新候选独立消融 |
+| `dsqc_rba` | D-FINE-M + DSQC，附加 RBA 训练正则 | 当前待验证候选 |
+| `dsqc_qcr` | D-FINE-M + DSQC，附加 QCR 训练正则 | 历史实验复现 |
 | `qlcs` | D-FINE-M + QLCS | 已完成的第一模块消融 |
 | `dsqc` | D-FINE-M + DSQC | 新第二模块独立消融 |
-| `dsqc_csga` | D-FINE-M + DSQC + CSGA | 最新待验证候选 |
+| `dsqc_csga` | D-FINE-M + DSQC + CSGA | 历史实验复现 |
 | `qlcs_dsqc` | D-FINE-M + QLCS + DSQC | 已完成的第二步累计消融 |
 | `qacg` | D-FINE-M + QACG | 旧失败实验复现 |
 | `qlcs_dsqc_qacg` | D-FINE-M + QLCS + DSQC + QACG | 旧失败实验复现 |
@@ -87,11 +102,11 @@ AP50/P/F1 为 0.9134/0.8173/0.8448，也低于前一阶段的
 | `qlcs_dsqc_mgca` | D-FINE-M + QLCS + DSQC + MGCA | 旧失败实验复现 |
 | `qlcs_dsqc_shea` | D-FINE-M + QLCS + DSQC + SHEA | 旧实验复现 |
 | `qlcs_dsqc_qcr` | QLCS + DSQC 网络，训练时附加 QCR | 旧实验复现 |
-| `qlcs_dsqc_csga` | QLCS + DSQC + CSGA | 当前待验证候选 |
+| `qlcs_dsqc_csga` | QLCS + DSQC + CSGA | 历史实验复现 |
 | `qfbcg` | D-FINE-M + QFBCG | 旧失败实验复现 |
 | `qlcs_qfbcg` | D-FINE-M + QLCS + QFBCG | 旧失败实验复现 |
 
-当前选择为 `qlcs_dsqc_csga`，对应配置
+历史阶段选择为 `qlcs_dsqc_csga`，对应配置
 `dfine_hgnetv2_m_qlcs_dsqc_csga.yml`。直接继承 QLCS+DSQC 的配置；
 QFBCG、QACG、MGCA、SHEA、QCR 均关闭。CSGA 分组数、偏移和残差上限放在该 YAML。
 仅 DSQC 的 `dsqc` 模式与原配置未改，另一台电脑可继续完成该独立消融。
@@ -103,7 +118,7 @@ SHEA 受 [Decoupled DETR（ICCV 2023）](https://openaccess.thecvf.com/content/I
 的判别性证据与查询细化思想启发。当前实现是针对 QLCS 潜在部件和 D-FINE
 后期分类查询设计的轻量适配器，并非复刻上述论文模块。
 
-## 节省时间的实验顺序
+## 历史 CSGA 实验顺序（新实验请用文首 RBA 计划）
 
 1. 保持 `MODEL_SIZE = "m"`、VRAC 关闭、学习率 `2e-4`，其余训练设置与既有
    基线和 QLCS 实验完全一致。

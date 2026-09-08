@@ -164,6 +164,19 @@ def train_one_epoch(
             qcr_logger.update(**qcr_stats)
             metric_logger.update(qcr_loss=qcr_weighted, qcr_pairs=qcr_stats["pairs"])
 
+        # RBA diagnostics are detached; only loss_rba enters optimization.
+        rba_stats = getattr(criterion, "rba_stats", {})
+        if rba_stats:
+            rba_stats = dist_utils.reduce_dict(rba_stats)
+            rba_stats["weighted"] = loss_dict_reduced["loss_rba"].detach()
+            if "loss_bbox" in loss_dict_reduced:
+                rba_stats["bbox_ratio"] = rba_stats["weighted"] / loss_dict_reduced["loss_bbox"].detach().clamp_min(1e-8)
+            for key in rba_stats:
+                name = f"rba_{key}"
+                if name not in metric_logger.meters:
+                    metric_logger.add_meter(name, SmoothedValue(fmt="{value:.2e} ({global_avg:.2e})"))
+            metric_logger.update(**{f"rba_{key}": value for key, value in rba_stats.items()})
+
         if writer and dist_utils.is_main_process() and global_step % 10 == 0:
             writer.add_scalar("Loss/total", loss_value.item(), global_step)
             for j, pg in enumerate(optimizer.param_groups):
@@ -174,6 +187,8 @@ def train_one_epoch(
                 writer.add_scalar(f"QCR/{k}", v.item(), global_step)
             for k, v in csga_stats.items():
                 writer.add_scalar(f"CSGA/{k}", v.item(), global_step)
+            for k, v in rba_stats.items():
+                writer.add_scalar(f"RBA/{k}", v.item(), global_step)
 
     if use_wandb:
         wandb.log(

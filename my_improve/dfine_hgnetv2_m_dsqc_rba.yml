@@ -1,0 +1,22 @@
+# DSQC + training-only relative boundary alignment; inference remains DSQC.
+__include__: ['./dfine_hgnetv2_m_dsqc.yml']
+num_classes: 1
+output_dir: ./output/dfine_hgnetv2_m_dsqc_rba
+
+HybridEncoder:
+  use_csga: False
+
+DFINETransformer:
+  use_qlcs: False
+  use_qfbcg: False
+  use_qacg: False
+  use_mgca: False
+  use_shea: False
+
+DFINECriterion:
+  use_qcr: False
+  use_rba: True
+  rba_weight: 0.2
+  rba_beta: 0.1
+  rba_min_extent: 0.05
+  rba_warmup_epochs: 5

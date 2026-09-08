@@ -16,6 +16,7 @@ import torch.nn.functional as F
 import torchvision
 
 from my_improve.qcr import QualityConstrainedRanking
+from my_improve.rba import RelativeBoundaryAlignment
 
 from ...core import register
 from ...misc.dist_utils import get_world_size, is_dist_available_and_initialized
@@ -52,6 +53,11 @@ class DFINECriterion(nn.Module):
         qcr_positive_iou=0.5,
         qcr_negative_iou=0.3,
         qcr_warmup_epochs=5,
+        use_rba=False,
+        rba_weight=0.2,
+        rba_beta=0.1,
+        rba_min_extent=0.05,
+        rba_warmup_epochs=5,
     ):
         """Create the criterion.
         Parameters:
@@ -87,6 +93,14 @@ class DFINECriterion(nn.Module):
         self.qcr_weight = qcr_weight
         self.qcr_warmup_epochs = qcr_warmup_epochs
         self.qcr_stats = {}
+        if not math.isfinite(rba_weight) or rba_weight < 0:
+            raise ValueError("rba_weight must be finite and nonnegative")
+        if not math.isfinite(rba_warmup_epochs) or rba_warmup_epochs < 0:
+            raise ValueError("rba_warmup_epochs must be finite and nonnegative")
+        self.rba = RelativeBoundaryAlignment(rba_beta, rba_min_extent) if use_rba else None
+        self.rba_weight = rba_weight
+        self.rba_warmup_epochs = rba_warmup_epochs
+        self.rba_stats = {}
 
     def loss_labels_focal(self, outputs, targets, indices, num_boxes):
         assert "pred_logits" in outputs
@@ -372,6 +386,20 @@ class DFINECriterion(nn.Module):
                 raise FloatingPointError("Non-finite QCR loss; check logits and sample geometry")
             losses["loss_qcr"] = raw_qcr * self.qcr_weight * factor
             self.qcr_stats["scale"] = raw_qcr.new_tensor(self.qcr_weight * factor)
+
+        # RBA is added ONCE on final normal queries, with final/GO assignment
+        # agreement. It never changes existing VFL/FDR/GO/DN targets or losses.
+        self.rba_stats = {}
+        if self.training and self.rba is not None and self.rba_weight > 0:
+            if "epoch" not in kwargs:
+                raise ValueError("RBA training requires epoch metadata for its warmup")
+            factor = self.rba.warmup_factor(
+                kwargs["epoch"], kwargs.get("step", 0), kwargs.get("epoch_step", 1),
+                self.rba_warmup_epochs,
+            )
+            raw_rba, self.rba_stats = self.rba(outputs, targets, indices, indices_go, num_boxes)
+            losses["loss_rba"] = raw_rba * self.rba_weight * factor
+            self.rba_stats["scale"] = raw_rba.new_tensor(self.rba_weight * factor)
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:

@@ -1,0 +1,5 @@
+# Independent RBA ablation with identical loss settings, DSQC disabled.
+__include__: ['./dfine_hgnetv2_m_dsqc_rba.yml']
+output_dir: ./output/dfine_hgnetv2_m_rba
+DFINETransformer:
+  use_dsqc: False
