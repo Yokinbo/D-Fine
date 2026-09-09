@@ -677,6 +677,12 @@ class DFINETransformer(nn.Module):
         shea_dropout=0.0,
         shea_layers=None,
         shea_exclude_denoising=True,
+        use_pad=False,
+        pad_max_ratio=0.25,
+        pad_iou_min=0.3,
+        pad_iou_max=0.7,
+        pad_ambiguity_margin=0.05,
+        pad_warmup_epochs=5,
     ):
         super().__init__()
         assert len(feat_channels) <= num_levels
@@ -908,6 +914,18 @@ class DFINETransformer(nn.Module):
         self.num_denoising = num_denoising
         self.label_noise_ratio = label_noise_ratio
         self.box_noise_scale = box_noise_scale
+        if use_pad and (num_denoising <= 0 or not aux_loss):
+            raise ValueError("PAD requires denoising queries and auxiliary DN supervision")
+        if use_pad:
+            from my_improve.pad import ProposalAlignedDenoising
+        self.pad = ProposalAlignedDenoising(
+            max_ratio=pad_max_ratio,
+            iou_min=pad_iou_min,
+            iou_max=pad_iou_max,
+            ambiguity_margin=pad_ambiguity_margin,
+            warmup_epochs=pad_warmup_epochs,
+        ) if use_pad else None
+        self.pad_stats = {}
         if num_denoising > 0:
             self.denoising_class_embed = nn.Embedding(
                 num_classes + 1, hidden_dim, padding_idx=num_classes
@@ -1214,9 +1232,25 @@ class DFINETransformer(nn.Module):
         else:
             denoising_logits, denoising_bbox_unact, attn_mask, dn_meta = None, None, None, None
 
-        init_ref_contents, init_ref_points_unact, enc_topk_bboxes_list, enc_topk_logits_list = (
-            self._get_decoder_input(memory, spatial_shapes, denoising_logits, denoising_bbox_unact)
-        )
+        self.pad_stats = {}
+        if self.training and self.pad is not None:
+            # Keep original DN generation above in the same RNG order. Build the
+            # ordinary encoder proposals ONCE; PAD changes only positive DN refs.
+            init_ref_contents, init_ref_points_unact, enc_topk_bboxes_list, enc_topk_logits_list = (
+                self._get_decoder_input(memory, spatial_shapes)
+            )
+            denoising_bbox_unact, self.pad_stats = self.pad(
+                denoising_bbox_unact, targets, dn_meta,
+                enc_topk_bboxes_list[0], enc_topk_logits_list[0],
+            )
+            if denoising_bbox_unact is not None:
+                init_ref_points_unact = torch.cat((denoising_bbox_unact, init_ref_points_unact), dim=1)
+                init_ref_contents = torch.cat((denoising_logits, init_ref_contents), dim=1)
+        else:
+            # Preserve disabled and inference paths, including original DN concat.
+            init_ref_contents, init_ref_points_unact, enc_topk_bboxes_list, enc_topk_logits_list = (
+                self._get_decoder_input(memory, spatial_shapes, denoising_logits, denoising_bbox_unact)
+            )
 
         # decoder
         out_bboxes, out_logits, out_corners, out_refs, pre_bboxes, pre_logits = self.decoder(

@@ -42,6 +42,7 @@ def train_one_epoch(
     metric_logger = MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
     qcr_logger = MetricLogger(delimiter="  ")
+    pad_logger = MetricLogger(delimiter="  ")
 
     epochs = kwargs.get("epochs", None)
     header = "Epoch: [{}]".format(epoch) if epochs is None else "Epoch: [{}/{}]".format(epoch, epochs)
@@ -62,6 +63,12 @@ def train_one_epoch(
     ):
         global_step = epoch * len(data_loader) + i
         metas = dict(epoch=epoch, step=i, global_step=global_step, epoch_step=len(data_loader))
+        # PAD sampling happens before criterion.forward; recover its schedule
+        # from epoch/step each batch (also after resume), never a hidden counter.
+        detector_decoder = getattr(dist_utils.de_parallel(model), "decoder", None)
+        pad = getattr(detector_decoder, "pad", None)
+        if pad is not None:
+            pad.set_progress(epoch, step=i, epoch_step=len(data_loader))
 
         if global_step < num_visualization_sample_batch and output_dir is not None and dist_utils.is_main_process():
             save_samples(samples, targets, output_dir, "train", normalized=True, box_fmt="cxcywh")
@@ -177,6 +184,24 @@ def train_one_epoch(
                     metric_logger.add_meter(name, SmoothedValue(fmt="{value:.2e} ({global_avg:.2e})"))
             metric_logger.update(**{f"rba_{key}": value for key, value in rba_stats.items()})
 
+        # PAD is a sampler, NOT a new loss. Keep all diagnostics but only a few
+        # activation indicators in the per-step terminal line.
+        pad_stats = getattr(detector_decoder, "pad_stats", {})
+        if pad_stats:
+            pad_stats = dist_utils.reduce_dict(pad_stats)
+            # Counts/sums were reduced across ranks; recompute weighted ratios
+            # (an empty rank must not dilute the nonempty ranks' measurements).
+            pad_stats["actual_ratio"] = pad_stats["replaced"] / pad_stats["positive_slots"].clamp_min(1e-12)
+            for key in ("original_iou", "replacement_iou", "original_area_ratio", "replacement_area_ratio"):
+                pad_stats[key] = pad_stats[f"{key}_sum"] / pad_stats["replaced"].clamp_min(1e-12)
+            pad_logger.update(**pad_stats)
+            pad_coverage = pad_stats["covered_gt"] / pad_stats["total_gt"].clamp_min(1e-12)
+            for name in ("pad_actual_ratio", "pad_replaced", "pad_coverage"):
+                if name not in metric_logger.meters:
+                    metric_logger.add_meter(name, SmoothedValue(fmt="{value:.2e} ({global_avg:.2e})"))
+            metric_logger.update(pad_actual_ratio=pad_stats["actual_ratio"],
+                                 pad_replaced=pad_stats["replaced"], pad_coverage=pad_coverage)
+
         if writer and dist_utils.is_main_process() and global_step % 10 == 0:
             writer.add_scalar("Loss/total", loss_value.item(), global_step)
             for j, pg in enumerate(optimizer.param_groups):
@@ -189,6 +214,8 @@ def train_one_epoch(
                 writer.add_scalar(f"CSGA/{k}", v.item(), global_step)
             for k, v in rba_stats.items():
                 writer.add_scalar(f"RBA/{k}", v.item(), global_step)
+            for k, v in pad_stats.items():
+                writer.add_scalar(f"PAD/{k}", v.item(), global_step)
 
     if use_wandb:
         wandb.log(
@@ -202,6 +229,18 @@ def train_one_epoch(
         qcr_logger.synchronize_between_processes()
         print("QCR diagnostics:", qcr_logger)
         result.update({f"qcr_{k}": meter.global_avg for k, meter in qcr_logger.meters.items()})
+    if pad_logger.meters:
+        pad_logger.synchronize_between_processes()
+        print("PAD diagnostics:", pad_logger)
+        result.update({f"pad_{k}": meter.global_avg for k, meter in pad_logger.meters.items()})
+        # Epoch ratios use counts rather than averaging small/empty batch ratios.
+        result["pad_actual_ratio"] = result["pad_replaced"] / max(result["pad_positive_slots"], 1e-12)
+        result["pad_coverage"] = result["pad_covered_gt"] / max(result["pad_total_gt"], 1e-12)
+        for key in ("original_iou", "replacement_iou", "original_area_ratio", "replacement_area_ratio"):
+            result[f"pad_{key}"] = result[f"pad_{key}_sum"] / max(result["pad_replaced"], 1e-12)
+        if pad is not None and epoch >= pad.warmup_epochs and result["pad_replaced"] == 0:
+            print("[PAD warning] No positive DN references replaced this epoch; "
+                  "inspect candidate coverage before committing to more full runs.")
     return result
 
 

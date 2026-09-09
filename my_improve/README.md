@@ -1,8 +1,17 @@
 # D-FINE 火力发电厂检测改进实验
 
-## 最新实验：DSQC + RBA（2026-09-08，尚未验证精度）
+## 最新实验：DSQC + PAD（2026-09-09，待验证）
 
-当前 `settings.py` 开关为 `dsqc_rba`：DSQC 保持原实现，附加训练期相对边界对齐
+默认模式 `dsqc_pad`：保留 DSQC，启用训练期候选框对齐去噪。最多替换 25% 的正 DN
+参考框，候选不足保留原随机框；原负 DN、损失、查询数与推理结构保持不变。
+RBA/QCR/QLCS/CSGA 等其他候选关闭但保留，不能把正在跑的 RBA 提前认定为失败。
+运行 `python train.py`，默认 SD3407，输出 `output/dsqc_pad/2e-4_SD3407`。
+完整说明、日志含义及验证计划见 [PAD 实验说明](PAD_EXPERIMENT.md)。
+后续新启动/续跑 RBA 时请切回其模式和输出目录；当前用户验证脚本权重路径未改。
+
+## 独立候选：DSQC + RBA（等待三种子结果）
+
+使用 `settings.py` 开关 `dsqc_rba`：DSQC 保持原实现，附加训练期相对边界对齐
 （Relative Boundary Alignment，RBA）。QLCS、QCR、CSGA 和其他旧候选关闭，但代码保留。
 RBA 只约束最终普通查询中与 GO 回归分配一致的匹配框，不修改原损失定义、匹配器、
 推理结构、数据集、阈值或后处理。新增损失仍会通过反向传播改变训练后的权重。
@@ -89,8 +98,10 @@ AP50/P/F1 为 0.9134/0.8173/0.8448，也低于前一阶段的
 | 模式 | 网络结构 | 用途 |
 |---|---|---|
 | `baseline` | 原始 D-FINE-M | 基线 |
+| `pad` | 原始 D-FINE-M，训练期 PAD 采样 | 新候选独立消融 |
+| `dsqc_pad` | D-FINE-M + DSQC，训练期 PAD 采样 | 当前待验证候选 |
 | `rba` | 原始 D-FINE-M，附加 RBA 训练正则 | 新候选独立消融 |
-| `dsqc_rba` | D-FINE-M + DSQC，附加 RBA 训练正则 | 当前待验证候选 |
+| `dsqc_rba` | D-FINE-M + DSQC，附加 RBA 训练正则 | 独立候选，待三种子结果 |
 | `dsqc_qcr` | D-FINE-M + DSQC，附加 QCR 训练正则 | 历史实验复现 |
 | `qlcs` | D-FINE-M + QLCS | 已完成的第一模块消融 |
 | `dsqc` | D-FINE-M + DSQC | 新第二模块独立消融 |

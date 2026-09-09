@@ -1,0 +1,24 @@
+# Training-only proposal-aligned denoising. Original DSQC inference unchanged.
+__include__: ['./dfine_hgnetv2_m_dsqc.yml']
+num_classes: 1
+output_dir: ./output/dfine_hgnetv2_m_dsqc_pad
+
+HybridEncoder:
+  use_csga: False
+
+DFINETransformer:
+  use_qlcs: False
+  use_qfbcg: False
+  use_qacg: False
+  use_mgca: False
+  use_shea: False
+  use_pad: True
+  pad_max_ratio: 0.25
+  pad_iou_min: 0.3
+  pad_iou_max: 0.7
+  pad_ambiguity_margin: 0.05
+  pad_warmup_epochs: 5
+
+DFINECriterion:
+  use_qcr: False
+  use_rba: False

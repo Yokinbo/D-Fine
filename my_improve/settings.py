@@ -21,9 +21,16 @@ IMPROVEMENT_DIR = Path(__file__).resolve().parent
 # "dsqc_csga": DSQC + CSGA, QLCS disabled; next validation ablation.
 # "dsqc_qcr": DSQC + training-only QCR; QLCS and CSGA disabled.
 # "rba" / "dsqc_rba": relative boundary alignment training ablation.
-IMPROVEMENT_MODE = "dsqc_rba"
+# "pad" / "dsqc_pad": proposal-aligned positive denoising; RBA/QCR disabled.
+IMPROVEMENT_MODE = "dsqc_pad"
 
 IMPROVEMENT_CONFIG_PATHS = {
+    "dsqc_pad": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_dsqc_pad.yml",
+    },
+    "pad": {
+        "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_pad.yml",
+    },
     "dsqc_rba": {
         "m": IMPROVEMENT_DIR / "dfine_hgnetv2_m_dsqc_rba.yml",
     },

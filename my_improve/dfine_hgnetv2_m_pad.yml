@@ -1,0 +1,5 @@
+# PAD-only independent ablation; all other improvements disabled.
+__include__: ['./dfine_hgnetv2_m_dsqc_pad.yml']
+output_dir: ./output/dfine_hgnetv2_m_pad
+DFINETransformer:
+  use_dsqc: False
