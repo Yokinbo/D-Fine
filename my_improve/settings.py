@@ -22,7 +22,7 @@ IMPROVEMENT_DIR = Path(__file__).resolve().parent
 # "dsqc_qcr": DSQC + training-only QCR; QLCS and CSGA disabled.
 # "rba" / "dsqc_rba": relative boundary alignment training ablation.
 # "pad" / "dsqc_pad": proposal-aligned positive denoising; RBA/QCR disabled.
-IMPROVEMENT_MODE = "dsqc_pad"
+IMPROVEMENT_MODE = "rba"
 
 IMPROVEMENT_CONFIG_PATHS = {
     "dsqc_pad": {
