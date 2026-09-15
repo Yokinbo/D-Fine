@@ -1,7 +1,7 @@
 """
 D-FINE 火电厂大范围遥感影像正式应用脚本。
 
-默认使用对比实验中的 E 策略，也可在用户配置区关闭，切换到基础重叠滑窗：
+默认使用对比实验中的 F 策略，也可在用户配置区关闭，切换到基础重叠滑窗：
 
     512/256 重叠滑窗
     + 边界/不确定候选 768 扩展视域复检
@@ -69,7 +69,7 @@ def model_config_for_mode(mode: str) -> Path:
 # =============================================================================
 
 # 待检测的灵武市/镇级/县级 RGB GeoTIFF 绝对路径。
-INPUT_TIF = r"G:\金三角tif影像\鄂尔多斯市\准格尔旗\薛家湾镇1.84m\Level16\薛家湾镇1.84m.tif"
+INPUT_TIF = r"G:\金三角tif影像\宁夏\银川市\灵武市1.88m\Level16\灵武市1.88m.tif"
 
 # 明确指定本次权重的网络模式。这里设为 dsqc_rba 后，不受
 # my_improve/settings.py 中 IMPROVEMENT_MODE 当前值影响。
@@ -86,19 +86,19 @@ NUM_CLASSES = 1
 CHECKPOINT = r"G:\b1完整目标检测模型与权重结果\权重结果\改进实验dfine\dsqc_rba\最佳2e-4_SD18\best_map50.pth"
 
 # 本次正式应用的独立输出目录。
-OUTPUT_DIR = r"F:\2testkeshan\dfine推理测试\薛家湾"
+OUTPUT_DIR = r"F:\3能源金三角基础设施识别\火力发电厂\火电厂论文撰写\大图推理策略实验\测试可删\策略灵武0.6"
 
 # Shapefile 输出文件名：只填写文件名并保留 .shp 后缀，文件仍保存到 OUTPUT_DIR。
-SHP_OUTPUT_NAME = "无策略薛家湾-置信度0.4.shp"
+SHP_OUTPUT_NAME = "策略灵武市-置信度0.6.shp"
 # 最终制图置信度：先填写 valid.py 报告的最佳 F1 置信度，再根据
 # 真实大图上的误检/漏检人工调整。也可用 --confidence 临时覆盖。
-FINAL_CONFIDENCE = 0.4
+FINAL_CONFIDENCE = 0.6
 
 # 推理策略总开关：
-# True：使用 E 策略（重叠滑窗 + 扩展视域复检 + BR-DCF + 选择性 TTA）。
+# True：使用 F 策略（重叠滑窗 + 扩展视域复检 + BR-DCF + 选择性 TTA）。
 # False：使用最基本的大图推理（相同重叠滑窗 + 普通全局 NMS），不执行复检、BR-DCF 或 TTA。
 # 做对比实验时只改这个开关，并为 OUTPUT_DIR、SHP_OUTPUT_NAME 设置新的名称，避免覆盖结果。
-USE_INFERENCE_STRATEGY = False
+USE_INFERENCE_STRATEGY = True
 
 DEVICE = "cuda:0"
 USE_AMP = True
@@ -113,16 +113,30 @@ BATCH_SIZE = 6
 
 MIN_SUPPORT_COUNT = 1
 
-# E 策略核心参数。默认值应与对比实验保持一致，论文定稿后不要随意修改。
+# F 策略核心参数。默认值应与对比实验保持一致，论文定稿后不要随意修改。
 BASE_TILE_SIZE = 512                       #可以做两组实验：BASE_TILE_SIZE = 768   基础窗口：768×768；
 OVERLAP_STRIDE = 256                                     #OVERLAP_STRIDE = 384   相邻窗口步长：384；
 REFINE_CONTEXT_SIZE = 768                                 #REFINE_CONTEXT_SIZE = 1024   复检窗口：1024×1024；
+CANDIDATE_CONFIDENCE = 0.05
+MAX_CANDIDATES_PER_WINDOW_VIEW = 50
 EDGE_MARGIN = 64                                    #实验1：512窗口，步长256，复检768
 EDGE_RISK_THRESHOLD = 0.50                          #实验2：768窗口，步长384，复检1024
 REFINE_MIN_CONFIDENCE = 0.25
 REFINE_STABLE_CONFIDENCE = 0.50
+REFINE_UNCERTAIN_CANDIDATES = True
+REFINE_TRIGGER_NMS_IOU = 0.30
+MAX_REFINE_WINDOWS = 1000
 FUSION_IOU = 0.35
+FUSION_GAMMA = 1.0
+FUSION_CENTER_FLOOR = 0.20
+FUSION_CONSISTENCY_FLOOR = 0.20
+SELECTIVE_TTA_MODES = ("hflip", "vflip", "hvflip")
 BASIC_NMS_IOU = 0.50    #普通NMS阈值
+
+# 无效黑边处理必须与消融脚本一致，否则两份脚本实际送入模型的窗口会不同。
+BLACK_THRESHOLD = 3
+MIN_VALID_RATIO = 0.20
+ALLOW_NON_UINT8 = False
 
 # 输出 GeoJSON 和 CSV 不需要 geopandas；GPKG/SHP 需要 geopandas、shapely、fiona。
 WRITE_GPKG = True
@@ -157,23 +171,38 @@ def apply_application_config(core: ModuleType, input_tif: str, checkpoint: str) 
     """Synchronize the formal application settings into the shared inference core."""
     core.INPUT_TIF = input_tif
     core.GT_VECTOR = ""
+    core.MODEL_MODE = MODEL_MODE
     core.MODEL_CONFIG = MODEL_CONFIG
+    core.MODEL_TAG = MODEL_TAG
     core.CHECKPOINT = checkpoint
     core.NUM_CLASSES = NUM_CLASSES
     core.DEVICE = DEVICE
     core.USE_AMP = USE_AMP
     core.BATCH_SIZE = BATCH_SIZE
     core.MODEL_INPUT_SIZE = MODEL_IMAGE_SIZE
+    core.CANDIDATE_CONF = CANDIDATE_CONFIDENCE
     core.FINAL_CONF = FINAL_CONFIDENCE
     core.BASE_TILE_SIZE = BASE_TILE_SIZE
     core.OVERLAP_STRIDE = OVERLAP_STRIDE
+    core.MAX_CANDIDATES_PER_WINDOW_VIEW = MAX_CANDIDATES_PER_WINDOW_VIEW
     core.REFINE_CONTEXT_SIZE = REFINE_CONTEXT_SIZE
     core.EDGE_MARGIN = EDGE_MARGIN
     core.EDGE_RISK_THRESHOLD = EDGE_RISK_THRESHOLD
     core.REFINE_MIN_CONF = REFINE_MIN_CONFIDENCE
     core.REFINE_STABLE_CONF = REFINE_STABLE_CONFIDENCE
+    core.REFINE_UNCERTAIN_CANDIDATES = REFINE_UNCERTAIN_CANDIDATES
+    core.REFINE_TRIGGER_NMS_IOU = REFINE_TRIGGER_NMS_IOU
+    core.MAX_REFINE_WINDOWS = MAX_REFINE_WINDOWS
     core.FUSION_IOU = FUSION_IOU
+    core.FUSION_GAMMA = FUSION_GAMMA
+    core.FUSION_CENTER_FLOOR = FUSION_CENTER_FLOOR
+    core.FUSION_CONSISTENCY_FLOOR = FUSION_CONSISTENCY_FLOOR
+    core.SELECTIVE_TTA_MODES = SELECTIVE_TTA_MODES
     core.GLOBAL_NMS_IOU = BASIC_NMS_IOU
+    core.MIN_SUPPORT_COUNT = MIN_SUPPORT_COUNT
+    core.BLACK_THRESHOLD = BLACK_THRESHOLD
+    core.MIN_VALID_RATIO = MIN_VALID_RATIO
+    core.ALLOW_NON_UINT8 = ALLOW_NON_UINT8
     core.WRITE_GPKG = WRITE_GPKG
     core.WRITE_SHP = WRITE_SHP
     core.SHP_OUTPUT_NAME = SHP_OUTPUT_NAME
@@ -189,8 +218,8 @@ def apply_application_config(core: ModuleType, input_tif: str, checkpoint: str) 
         use_brdcf=False,
         use_selective_tta=False,
     )
-    core.STRATEGIES["E"] = core.Strategy(
-        code="E",
+    core.STRATEGIES["F"] = core.Strategy(
+        code="F",
         name=(f"{BASE_TILE_SIZE}/{OVERLAP_STRIDE}重叠滑窗+"
               f"{REFINE_CONTEXT_SIZE}复检+BR-DCF+选择性TTA"),
         stride=OVERLAP_STRIDE,
@@ -201,7 +230,9 @@ def apply_application_config(core: ModuleType, input_tif: str, checkpoint: str) 
 
 
 def validate_paths(core: ModuleType, input_tif: str, checkpoint: str) -> None:
-    core.require_runtime_dependencies()
+    # 复用消融脚本的完整自检，确保模型、输入尺寸及全部共享策略参数确实生效。
+    strategy_code = "F" if USE_INFERENCE_STRATEGY else "B"
+    core.validate_config(strategy_code)
     required = {
         "输入 GeoTIFF": input_tif,
         "模型配置": MODEL_CONFIG,
@@ -225,6 +256,16 @@ def validate_paths(core: ModuleType, input_tif: str, checkpoint: str) -> None:
         raise ValueError("MODEL_IMAGE_SIZE 必须是能被 32 整除的正整数。")
     if not 0.0 <= FINAL_CONFIDENCE <= 1.0:
         raise ValueError("FINAL_CONFIDENCE 必须在 [0, 1] 范围内。")
+    if not 0.0 <= CANDIDATE_CONFIDENCE <= FINAL_CONFIDENCE:
+        raise ValueError("置信度应满足 0 <= CANDIDATE_CONFIDENCE <= FINAL_CONFIDENCE。")
+    if MAX_CANDIDATES_PER_WINDOW_VIEW < 1:
+        raise ValueError("MAX_CANDIDATES_PER_WINDOW_VIEW 必须大于等于 1。")
+    if not 0.0 <= REFINE_TRIGGER_NMS_IOU <= 1.0:
+        raise ValueError("REFINE_TRIGGER_NMS_IOU 必须在 [0, 1] 范围内。")
+    if not 0.0 <= FUSION_IOU <= 1.0 or not 0.0 <= BASIC_NMS_IOU <= 1.0:
+        raise ValueError("FUSION_IOU 和 BASIC_NMS_IOU 必须在 [0, 1] 范围内。")
+    if MIN_SUPPORT_COUNT < 1:
+        raise ValueError("MIN_SUPPORT_COUNT 必须大于等于 1。")
     if not isinstance(USE_INFERENCE_STRATEGY, bool):
         raise ValueError("USE_INFERENCE_STRATEGY 只能设置为 True 或 False。")
     if not USE_INFERENCE_STRATEGY and MIN_SUPPORT_COUNT != 1:
@@ -276,7 +317,7 @@ def run_formal_inference(input_tif: str, checkpoint: str, output_dir: str) -> No
     result_dir = Path(output_dir)
     result_dir.mkdir(parents=True, exist_ok=True)
     device = core.resolve_device()
-    strategy_code = "E" if USE_INFERENCE_STRATEGY else "B"
+    strategy_code = "F" if USE_INFERENCE_STRATEGY else "B"
     strategy = core.STRATEGIES[strategy_code]
 
     print("\n" + "=" * 72)
@@ -370,6 +411,7 @@ def run_formal_inference(input_tif: str, checkpoint: str, output_dir: str) -> No
             "checkpoint": checkpoint,
             "model_config": MODEL_CONFIG,
             "model_image_size": MODEL_IMAGE_SIZE,
+            "batch_size": BATCH_SIZE,
             "output_dir": str(result_dir),
             "device": str(device),
             "crs": str(src.crs),
@@ -377,11 +419,28 @@ def run_formal_inference(input_tif: str, checkpoint: str, output_dir: str) -> No
             "raster_height": src.height,
             "base_tile_size": BASE_TILE_SIZE,
             "base_stride": OVERLAP_STRIDE,
+            "candidate_confidence": CANDIDATE_CONFIDENCE,
+            "max_candidates_per_window_view": MAX_CANDIDATES_PER_WINDOW_VIEW,
             "refine_context_size": REFINE_CONTEXT_SIZE if strategy.use_refine else None,
+            "edge_margin": EDGE_MARGIN,
+            "edge_risk_threshold": EDGE_RISK_THRESHOLD,
+            "refine_min_confidence": REFINE_MIN_CONFIDENCE,
+            "refine_stable_confidence": REFINE_STABLE_CONFIDENCE,
+            "refine_uncertain_candidates": REFINE_UNCERTAIN_CANDIDATES,
+            "refine_trigger_nms_iou": REFINE_TRIGGER_NMS_IOU,
+            "max_refine_windows": MAX_REFINE_WINDOWS,
             "tta_modes": (["original", *core.SELECTIVE_TTA_MODES]
                           if strategy.use_selective_tta else ["original"]),
+            "fusion_iou": FUSION_IOU,
+            "fusion_gamma": FUSION_GAMMA,
+            "fusion_center_floor": FUSION_CENTER_FLOOR,
+            "fusion_consistency_floor": FUSION_CONSISTENCY_FLOOR,
+            "basic_nms_iou": BASIC_NMS_IOU,
             "final_confidence": FINAL_CONFIDENCE,
             "min_support_count": MIN_SUPPORT_COUNT,
+            "black_threshold": BLACK_THRESHOLD,
+            "min_valid_ratio": MIN_VALID_RATIO,
+            "allow_non_uint8": ALLOW_NON_UINT8,
             "base_windows": base_windows,
             "skipped_windows": skipped_windows,
             "refine_windows": len(refine_specs),

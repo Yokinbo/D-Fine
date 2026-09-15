@@ -4,24 +4,28 @@ D-FINE 火电厂大范围遥感影像推理策略对比实验。
 使用步骤
 --------
 1. 修改下方“用户配置区”的绝对路径。
-2. 将 STRATEGY_MODE 改为 A、B、C、D 或 E。
+2. 将 STRATEGY_MODE 改为 B、C、D、E、F 之一，或改为 ALL 依次运行全部五组。
 3. 在 dfine 环境中运行：
 
        python myscript/大范围遥感影像火电厂推理策略对比实验.py
 
-五组策略
---------
-A：512 不重叠窗口 + 全局 NMS
-B：512 窗口 / 256 步长 + 全局 NMS
-C：B + 边界/不确定候选的 768 扩展视域复检 + 全局 NMS
-D：C + 边界风险与跨视图一致性加权融合（BR-DCF）
-E：D + 仅对扩展视域窗口执行选择性 TTA
+论文五组消融（汇总顺序 B/C/D/E/F）
+--------------------------------------
+B：512 窗口 / 256 步长 + 普通全局 NMS（基础组）
+C：B + 边界/不确定候选的 768 扩展视域复检 + 全局 NMS（仅复检）
+D：B + BR-DCF 跨窗口融合，不执行复检和 TTA（仅 BR-DCF）
+E：B + 扩展视域复检 + BR-DCF（复检+融合）
+F：E + 仅对扩展视域窗口执行选择性 TTA（完整策略）
+
+可选参考组
+----------
+A：512 不重叠窗口 + 全局 NMS。A 不进入论文五组消融汇总表。
 
 重要说明
 --------
 * 所谓“边界目标”是被内部 512×512 推理网格截断的目标，不是行政区外边界目标。
 * 真值矢量只用于推理结束后的评价，模型推理和复检触发过程不会读取真值。
-* 输入源窗口始终是 512×512；模型内部统一缩放至 640×640，与训练配置保持一致。
+* 输入源窗口默认是 512×512；模型输入尺寸由 experiment_config.py 统一管理。
 * mAP 使用全部低阈值候选形成 PR 曲线；Precision/Recall/F1 使用固定置信度阈值。
 """
 
@@ -72,50 +76,86 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.core import YAMLConfig
+from experiment_config import MODEL_CONFIG_PATHS, MODEL_IMAGE_SIZE, MODEL_SIZE
+from my_improve.settings import IMPROVEMENT_CONFIG_PATHS
+
+
+def model_config_for_mode(mode: str) -> Path:
+    """按显式模式选择 YAML，不跟随 my_improve/settings.py 的当前训练开关。"""
+    normalized_mode = mode.lower().strip()
+    model_size = MODEL_SIZE.lower().strip()
+    if normalized_mode == "baseline":
+        if model_size not in MODEL_CONFIG_PATHS:
+            raise ValueError(f"baseline 不支持模型规模 {MODEL_SIZE!r}")
+        return MODEL_CONFIG_PATHS[model_size]
+    if normalized_mode not in IMPROVEMENT_CONFIG_PATHS:
+        choices = "、".join(["baseline", *sorted(IMPROVEMENT_CONFIG_PATHS)])
+        raise ValueError(f"MODEL_MODE 必须是 {choices}，当前为 {mode!r}")
+    configs = IMPROVEMENT_CONFIG_PATHS[normalized_mode]
+    if model_size not in configs:
+        supported_sizes = "、".join(size.upper() for size in sorted(configs))
+        raise ValueError(f"{normalized_mode.upper()} 当前仅支持 {supported_sizes} 规模")
+    return configs[model_size]
 
 
 # =============================================================================
 # 用户配置区：通常只修改这里，然后直接运行脚本
 # =============================================================================
 
-# A / B / C / D / E；建议每次只运行一组，输出会进入独立子目录。
-STRATEGY_MODE = "A"
-
+# B / C / D / E / F；设为 ALL 可依次运行全部五组。
+# A 是原有的不重叠滑窗参考组，不列入论文五组消融表。
+STRATEGY_MODE = "ALL"
 # 灵武市或其他镇级/县级 RGB GeoTIFF。影像至少应包含 3 个波段。
-INPUT_TIF = r""
-
+INPUT_TIF = r"G:\金三角tif影像\宁夏\银川市\灵武市1.88m\Level16\灵武市1.88m.tif"
 # ArcMap 标注的火电厂水平矩形真值框。
 # 推荐 Shapefile / GeoPackage；使用这两种格式时需要 geopandas。
 # 也支持与影像坐标系完全一致的 GeoJSON（无需 geopandas）。
-GT_VECTOR = r""
+GT_VECTOR = r"F:\3能源金三角基础设施识别\火力发电厂\火电厂论文撰写\大图推理策略实验\灵武市火电真值shp\lingwuhuodian.shp"
 
-# D-FINE-S + VRAC 配置及最终训练权重。
-MODEL_CONFIG = r"E:\YOLO\D-FINE\configs\dfine\custom\dfine_hgnetv2_s_custom_vrac.yml"
-CHECKPOINT = r"E:\YOLO\D-FINE\output\火电厂_D-FINE-S_VRAC_200轮\best_stg1.pth"
+# 与“大范围遥感影像推理正式实用版.py”保持同一模型选择：
+# D-FINE-M + DSQC+RBA。RBA 是训练期正则，推理网络结构由对应 YAML 恢复。
+MODEL_MODE = "dsqc_rba"
+MODEL_CONFIG = str(model_config_for_mode(MODEL_MODE))
+MODEL_TAG = f"D-FINE-{MODEL_SIZE.upper()}" + (
+    "" if MODEL_MODE.lower().strip() == "baseline" else f"_{MODEL_MODE.upper()}"
+)
+CHECKPOINT = r"G:\b1完整目标检测模型与权重结果\权重结果\改进实验dfine\dsqc_rba\最佳2e-4_SD18\best_map50.pth"
 # 本任务仅检测火电厂（hdc）。必须与训练权重的检测头类别数一致。
 NUM_CLASSES = 1
-
 # 每种策略自动建立 strategy_A、strategy_B ... 子目录。
-OUTPUT_ROOT = r"E:\YOLO\D-FINE\output\大范围遥感影像推理策略对比"
-
-DEVICE = "cuda:0"
-USE_AMP = True
-MODEL_INPUT_SIZE = 640
-BATCH_SIZE = 4
-
-# 源影像滑窗参数。A 会自动把步长改为 512，B~E 使用 256。
-BASE_TILE_SIZE = 512
-OVERLAP_STRIDE = 256
-
+OUTPUT_ROOT = r"F:\3能源金三角基础设施识别\火力发电厂\火电厂论文撰写\大图推理策略实验\测试可删\策略对比试验ALL"
 # 低阈值候选用于 COCO 风格 mAP 曲线；最终制图与 P/R/F1 使用 FINAL_CONF。
 CANDIDATE_CONF = 0.05
-FINAL_CONF = 0.50
+#需要自己设置推理置信度
+FINAL_CONF = 0.60
+
+# 输出选项。GeoJSON 和 CSV 始终可写；GPKG/SHP 需要 geopandas。
+WRITE_GPKG = True
+WRITE_SHP = True
+# 默认文件名；正式实用版会在运行时覆盖为其 SHP_OUTPUT_NAME 配置。
+SHP_OUTPUT_NAME = "灵武置信度0.6.shp"
+WRITE_PREVIEW = True
+PREVIEW_MAX_SIZE = 2400
+
+
 GLOBAL_NMS_IOU = 0.50
+# 1 表示不启用“最少支持次数”过滤，与正式实用版当前配置一致。
+MIN_SUPPORT_COUNT = 1
 # 单类别火电厂非常稀疏，每个窗口只保留分数最高的若干低阈值候选，防止全市
 # 数千窗口累计数百万个 DETR queries。该限制发生在 mAP 评估前，建议不要低于 20。
 MAX_CANDIDATES_PER_WINDOW_VIEW = 50
 
-# C~E：边界风险和不确定候选的扩展视域复检。
+DEVICE = "cuda:0"
+USE_AMP = True
+MODEL_INPUT_SIZE = MODEL_IMAGE_SIZE
+BATCH_SIZE = 6
+
+# 源影像滑窗参数。A 会自动把步长改为 512，B~F 使用 256。
+BASE_TILE_SIZE = 512
+OVERLAP_STRIDE = 256
+
+
+# C/E/F：边界风险和不确定候选的扩展视域复检。
 EDGE_MARGIN = 64
 EDGE_RISK_THRESHOLD = 0.50
 REFINE_MIN_CONF = 0.25
@@ -125,13 +165,13 @@ REFINE_CONTEXT_SIZE = 768
 REFINE_TRIGGER_NMS_IOU = 0.30
 MAX_REFINE_WINDOWS = 1000
 
-# D~E：BR-DCF 融合参数。
+# D/E/F：BR-DCF 融合参数。
 FUSION_IOU = 0.35
 FUSION_GAMMA = 1.0
 FUSION_CENTER_FLOOR = 0.20
 FUSION_CONSISTENCY_FLOOR = 0.20
 
-# E：只对复检窗口执行这些 TTA。original 会始终执行，无需写入。
+# F：只对复检窗口执行这些 TTA。original 会始终执行，无需写入。
 SELECTIVE_TTA_MODES = ("hflip", "vflip", "hvflip")
 
 # 真值评价参数。
@@ -143,17 +183,12 @@ SEVERE_BOUNDARY_GT_VISIBILITY = 0.70
 BLACK_THRESHOLD = 3
 MIN_VALID_RATIO = 0.20
 
-# 若已在 ArcMap 中得到测试区有效面积，可直接填写；0 表示按有效非黑像素估算。
-# 输入影像必须为以米为单位的投影坐标系，才能自动换算 km²。
+# 面积仅用于计算 seconds_per_km2，不影响检测框和任何精度指标。
+# False：完全跳过面积计算，适用于当前经纬度影像；True：计算面积归一化耗时。
+CALCULATE_AREA_METRICS = False
+# 开启面积指标后，若已在 ArcMap 中得到有效面积可直接填写；0 表示尝试自动估算。
+# 自动估算仅支持以米为单位的投影坐标系。
 VALID_AREA_KM2 = 0.0
-
-# 输出选项。GeoJSON 和 CSV 始终可写；GPKG/SHP 需要 geopandas。
-WRITE_GPKG = True
-WRITE_SHP = False
-# 默认文件名；正式实用版会在运行时覆盖为其 SHP_OUTPUT_NAME 配置。
-SHP_OUTPUT_NAME = "predictions.shp"
-WRITE_PREVIEW = True
-PREVIEW_MAX_SIZE = 2200
 
 # 当前训练数据来自普通 RGB 8-bit 影像。若输入不是 uint8，默认停止，避免静默产生色彩域偏移。
 ALLOW_NON_UINT8 = False
@@ -174,10 +209,14 @@ class Strategy:
 STRATEGIES: Dict[str, Strategy] = {
     "A": Strategy("A", "512不重叠窗口+全局NMS", BASE_TILE_SIZE, False, False, False),
     "B": Strategy("B", "512/256重叠窗口+全局NMS", OVERLAP_STRIDE, False, False, False),
-    "C": Strategy("C", "B+边界候选扩展视域复检", OVERLAP_STRIDE, True, False, False),
-    "D": Strategy("D", "C+BR-DCF边界一致性加权融合", OVERLAP_STRIDE, True, True, False),
-    "E": Strategy("E", "D+选择性TTA", OVERLAP_STRIDE, True, True, True),
+    "C": Strategy("C", "B+扩展视域复检+全局NMS（仅复检）", OVERLAP_STRIDE, True, False, False),
+    "D": Strategy("D", "B+BR-DCF（仅融合）", OVERLAP_STRIDE, False, True, False),
+    "E": Strategy("E", "B+扩展视域复检+BR-DCF", OVERLAP_STRIDE, True, True, False),
+    "F": Strategy("F", "B+扩展视域复检+BR-DCF+选择性TTA", OVERLAP_STRIDE, True, True, True),
 }
+
+# 论文消融表固定按“基础→仅复检→仅融合→复检+融合→完整策略”排列。
+ABLATION_STRATEGY_ORDER = ("B", "C", "D", "E", "F")
 
 
 @dataclass
@@ -1018,6 +1057,7 @@ def compute_metrics(
     severe_tp = len(severe_indices.intersection(matches.keys()))
 
     return {
+        "GT": len(ground_truths),
         "AP@0.5": ap_values[0],
         "mAP@0.5:0.95": float(np.mean(ap_values)),
         "Precision": precision,
@@ -1042,13 +1082,16 @@ def compute_metrics(
 
 
 def estimate_valid_area_km2(src: Any) -> float:
+    if not CALCULATE_AREA_METRICS:
+        return 0.0
     if VALID_AREA_KM2 > 0:
         return float(VALID_AREA_KM2)
     if src.crs is None or not getattr(src.crs, "is_projected", False):
-        raise ValueError(
-            "自动计算 km² 需要以米为单位的投影坐标系。当前影像不是投影坐标系，"
-            "请在 ArcMap 中计算有效面积并填写 VALID_AREA_KM2。"
+        print(
+            "[提示] 当前影像不是投影坐标系，跳过有效面积和 seconds_per_km2；"
+            "检测及精度指标不受影响。"
         )
+        return 0.0
     valid_pixels = 0
     for _, window in src.block_windows(1):
         rgb = src.read([1, 2, 3], window=window)
@@ -1226,6 +1269,8 @@ def save_metrics_txt(path: Path, strategy: Strategy, metrics: Dict[str, Any]) ->
         "大范围遥感影像火电厂推理策略评价报告",
         "=" * 56,
         f"策略: {strategy.code} - {strategy.name}",
+        f"模型: {MODEL_TAG}",
+        f"模型配置: {MODEL_CONFIG}",
         f"输入影像: {INPUT_TIF}",
         f"模型权重: {CHECKPOINT}",
         "",
@@ -1245,37 +1290,80 @@ def save_metrics_txt(path: Path, strategy: Strategy, metrics: Dict[str, Any]) ->
 
 
 def update_comparison_summary(path: Path, strategy: Strategy, metrics: Dict[str, Any]) -> None:
-    fieldnames = [
-        "strategy",
-        "strategy_name",
-        "AP@0.5",
-        "mAP@0.5:0.95",
-        "Precision",
-        "Recall",
-        "F1",
-        "boundary_recall",
-        "severe_boundary_recall",
-        "raw_duplicate_boxes",
-        "final_duplicate_boxes",
-        "seconds_per_km2",
-        "refine_window_ratio",
-        "base_windows",
-        "refine_windows",
+    """将已有各组 JSON 结果重建为便于直接阅读的逐行 TXT 汇总。"""
+    records: Dict[str, Dict[str, Any]] = {}
+    for code in ABLATION_STRATEGY_ORDER:
+        result_json = Path(OUTPUT_ROOT) / f"strategy_{code}" / "run_config_and_metrics.json"
+        if not result_json.is_file():
+            continue
+        try:
+            payload = json.loads(result_json.read_text(encoding="utf-8"))
+            strategy_info = payload.get("strategy", {})
+            records[code] = {
+                "strategy_name": strategy_info.get("name", STRATEGIES[code].name),
+                "metrics": payload.get("metrics", {}),
+            }
+        except (OSError, json.JSONDecodeError, TypeError) as error:
+            print(f"[提示] 无法读取策略 {code} 的历史结果，暂不写入汇总: {error}")
+
+    # 当前结果始终覆盖同组历史结果，保证单独运行某一组时也能立即写入。
+    records[strategy.code] = {"strategy_name": strategy.name, "metrics": metrics}
+
+    metric_rows = [
+        ("exported_boxes", "输出框数", "integer"),
+        ("GT", "真值数", "integer"),
+        ("Recall", "Recall", "decimal"),
+        ("Precision", "Precision", "decimal"),
+        ("F1", "F1", "decimal"),
+        ("TP", "TP", "integer"),
+        ("FP", "FP", "integer"),
+        ("FN", "FN", "integer"),
+        ("AP@0.5", "AP@0.5", "decimal"),
+        ("mAP@0.5:0.95", "mAP@0.5:0.95", "decimal"),
+        ("boundary_recall", "边界目标Recall", "decimal"),
+        ("severe_boundary_recall", "严重截断目标Recall", "decimal"),
+        ("raw_duplicate_boxes", "融合前重复框数", "integer"),
+        ("final_duplicate_boxes", "融合后重复框数", "integer"),
+        ("inference_seconds", "推理耗时(秒)", "seconds"),
+        ("seconds_per_km2", "每平方公里耗时(秒)", "seconds"),
+        ("refine_window_ratio", "复检窗口占比", "percent"),
+        ("base_windows", "基础窗口数", "integer"),
+        ("refine_windows", "复检窗口数", "integer"),
     ]
-    existing: Dict[str, Dict[str, Any]] = {}
-    if path.is_file():
-        with path.open("r", newline="", encoding="utf-8-sig") as file:
-            for row in csv.DictReader(file):
-                existing[row["strategy"]] = row
-    row = {"strategy": strategy.code, "strategy_name": strategy.name}
-    row.update({name: metrics.get(name) for name in fieldnames if name not in row})
-    existing[strategy.code] = row
-    with path.open("w", newline="", encoding="utf-8-sig") as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        for code in "ABCDE":
-            if code in existing:
-                writer.writerow(existing[code])
+
+    def format_summary_value(value: Any, value_type: str) -> str:
+        if value is None or value == "":
+            return "未计算"
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        if value_type == "integer":
+            return str(int(round(numeric)))
+        if value_type == "seconds":
+            return f"{numeric:.2f}"
+        if value_type == "percent":
+            return f"{numeric:.2%}"
+        return f"{numeric:.4f}"
+
+    lines = [
+        "D-FINE火电厂大范围遥感影像推理策略对比汇总",
+        "=" * 64,
+        f"模型：{MODEL_TAG}",
+        f"最终置信度：{FINAL_CONF:.2f}",
+        f"匹配IoU：{MATCH_IOU:.2f}",
+    ]
+    for code in ABLATION_STRATEGY_ORDER:
+        if code not in records:
+            continue
+        record = records[code]
+        record_metrics = record["metrics"]
+        lines.extend(["", "-" * 64, f"策略{code}：{record['strategy_name']}"])
+        for key, label, value_type in metric_rows:
+            lines.append(
+                f"{label}：{format_summary_value(record_metrics.get(key), value_type)}"
+            )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
 
 
 def resolve_device() -> torch.device:
@@ -1285,22 +1373,103 @@ def resolve_device() -> torch.device:
     return torch.device(DEVICE)
 
 
+def validate_strategy_definitions() -> None:
+    """锁定论文五组消融的开关含义，避免编号与实际逻辑再次偏移。"""
+    expected = {
+        "B": (False, False, False),
+        "C": (True, False, False),
+        "D": (False, True, False),
+        "E": (True, True, False),
+        "F": (True, True, True),
+    }
+    if tuple(ABLATION_STRATEGY_ORDER) != tuple(expected):
+        raise RuntimeError("五组消融顺序必须为 B/C/D/E/F。")
+    for code, flags in expected.items():
+        strategy = STRATEGIES[code]
+        actual = (strategy.use_refine, strategy.use_brdcf, strategy.use_selective_tta)
+        if actual != flags:
+            raise RuntimeError(
+                f"策略 {code} 开关错误：期望 refine/brdcf/tta={flags}，实际为 {actual}"
+            )
+
+
 def validate_config(strategy_code: str) -> Strategy:
     require_runtime_dependencies()
+    validate_strategy_definitions()
     code = strategy_code.upper().strip()
     if code not in STRATEGIES:
-        raise ValueError(f"STRATEGY_MODE 必须是 A/B/C/D/E，当前为 {strategy_code!r}")
+        choices = "/".join(STRATEGIES)
+        raise ValueError(f"STRATEGY_MODE 必须是 {choices}，当前为 {strategy_code!r}")
     if not INPUT_TIF:
         raise ValueError("请先在用户配置区填写 INPUT_TIF。")
     if not Path(INPUT_TIF).is_file():
         raise FileNotFoundError(f"输入 GeoTIFF 不存在: {INPUT_TIF}")
+    if GT_VECTOR and not Path(GT_VECTOR).is_file():
+        raise FileNotFoundError(f"真值矢量不存在: {GT_VECTOR}")
+    expected_config = model_config_for_mode(MODEL_MODE).resolve()
+    actual_config = Path(MODEL_CONFIG).resolve()
+    if actual_config != expected_config:
+        raise ValueError(
+            f"MODEL_MODE={MODEL_MODE!r} 与 MODEL_CONFIG 不一致：{MODEL_CONFIG}"
+        )
+    if not actual_config.is_file():
+        raise FileNotFoundError(f"模型配置不存在: {MODEL_CONFIG}")
+    if not Path(CHECKPOINT).is_file():
+        raise FileNotFoundError(f"模型权重不存在: {CHECKPOINT}")
+    if MODEL_INPUT_SIZE != MODEL_IMAGE_SIZE:
+        raise ValueError(
+            f"大图推理输入尺寸 {MODEL_INPUT_SIZE} 与训练统一尺寸 "
+            f"MODEL_IMAGE_SIZE={MODEL_IMAGE_SIZE} 不一致。"
+        )
+    if MODEL_INPUT_SIZE <= 0 or MODEL_INPUT_SIZE % 32 != 0:
+        raise ValueError("MODEL_INPUT_SIZE 必须是能被 32 整除的正整数。")
     if BASE_TILE_SIZE <= 0 or OVERLAP_STRIDE <= 0:
         raise ValueError("窗口大小和步长必须大于 0。")
     if OVERLAP_STRIDE > BASE_TILE_SIZE:
         raise ValueError("OVERLAP_STRIDE 不能大于 BASE_TILE_SIZE。")
+    if REFINE_CONTEXT_SIZE < BASE_TILE_SIZE:
+        raise ValueError("REFINE_CONTEXT_SIZE 不能小于 BASE_TILE_SIZE。")
+    if not isinstance(BATCH_SIZE, int) or BATCH_SIZE < 1:
+        raise ValueError("BATCH_SIZE 必须是大于等于 1 的整数。")
+    if not isinstance(MAX_CANDIDATES_PER_WINDOW_VIEW, int) or MAX_CANDIDATES_PER_WINDOW_VIEW < 1:
+        raise ValueError("MAX_CANDIDATES_PER_WINDOW_VIEW 必须是大于等于 1 的整数。")
     if not 0 <= CANDIDATE_CONF <= FINAL_CONF <= 1:
         raise ValueError("置信度应满足 0 <= CANDIDATE_CONF <= FINAL_CONF <= 1。")
-    return STRATEGIES[code]
+    if not 0 <= REFINE_MIN_CONF <= REFINE_STABLE_CONF <= 1:
+        raise ValueError("复检置信度应满足 0 <= REFINE_MIN_CONF <= REFINE_STABLE_CONF <= 1。")
+    if not 0 <= EDGE_RISK_THRESHOLD <= 1:
+        raise ValueError("EDGE_RISK_THRESHOLD 必须在 [0, 1] 内。")
+    if EDGE_MARGIN < 0 or EDGE_MARGIN * 2 >= BASE_TILE_SIZE:
+        raise ValueError("EDGE_MARGIN 必须非负且小于 BASE_TILE_SIZE 的一半。")
+    if not 0 <= REFINE_TRIGGER_NMS_IOU <= 1:
+        raise ValueError("REFINE_TRIGGER_NMS_IOU 必须在 [0, 1] 内。")
+    if not isinstance(MAX_REFINE_WINDOWS, int) or MAX_REFINE_WINDOWS < 1:
+        raise ValueError("MAX_REFINE_WINDOWS 必须是大于等于 1 的整数。")
+    if not all(0 <= value <= 1 for value in (FUSION_IOU, GLOBAL_NMS_IOU)):
+        raise ValueError("融合和 NMS 的 IoU 阈值必须在 [0, 1] 内。")
+    if FUSION_GAMMA <= 0:
+        raise ValueError("FUSION_GAMMA 必须大于 0。")
+    if not all(0 <= value <= 1 for value in (
+        FUSION_CENTER_FLOOR, FUSION_CONSISTENCY_FLOOR
+    )):
+        raise ValueError("融合分数下限必须在 [0, 1] 内。")
+    valid_tta_modes = {"hflip", "vflip", "hvflip"}
+    if not SELECTIVE_TTA_MODES or not set(SELECTIVE_TTA_MODES).issubset(valid_tta_modes):
+        raise ValueError("SELECTIVE_TTA_MODES 只能包含 hflip/vflip/hvflip。")
+    if not 0 <= BLACK_THRESHOLD <= 255:
+        raise ValueError("BLACK_THRESHOLD 必须在 [0, 255] 内。")
+    if not 0 <= MIN_VALID_RATIO <= 1:
+        raise ValueError("MIN_VALID_RATIO 必须在 [0, 1] 内。")
+    if not isinstance(CALCULATE_AREA_METRICS, bool):
+        raise ValueError("CALCULATE_AREA_METRICS 只能设置为 True 或 False。")
+    if VALID_AREA_KM2 < 0:
+        raise ValueError("VALID_AREA_KM2 不能为负数。")
+    if not isinstance(MIN_SUPPORT_COUNT, int) or MIN_SUPPORT_COUNT < 1:
+        raise ValueError("MIN_SUPPORT_COUNT 必须是大于等于 1 的整数。")
+    strategy = STRATEGIES[code]
+    if not strategy.use_brdcf and MIN_SUPPORT_COUNT != 1:
+        raise ValueError("未启用 BR-DCF 的策略不产生融合支持数，请保持 MIN_SUPPORT_COUNT=1。")
+    return strategy
 
 
 def run_experiment(strategy_code: str) -> None:
@@ -1313,8 +1482,11 @@ def run_experiment(strategy_code: str) -> None:
     print(f"推理策略: {strategy.code} - {strategy.name}")
     print(f"输入影像: {INPUT_TIF}")
     print(f"真值矢量: {GT_VECTOR or '未设置（只推理，不计算精度）'}")
+    print(f"模型: {MODEL_TAG} | 网络输入: {MODEL_INPUT_SIZE}×{MODEL_INPUT_SIZE}")
+    print(f"模型配置: {MODEL_CONFIG}")
     print(f"模型权重: {CHECKPOINT}")
-    print(f"设备: {device} | AMP: {USE_AMP}")
+    print(f"设备: {device} | AMP: {USE_AMP} | batch: {BATCH_SIZE}")
+    print(f"候选置信度: {CANDIDATE_CONF:.3f} | 最终置信度: {FINAL_CONF:.3f}")
     print(f"输出目录: {result_dir}")
     print("=" * 68)
 
@@ -1326,8 +1498,9 @@ def run_experiment(strategy_code: str) -> None:
         classify_boundary_ground_truths(ground_truths, src.width, src.height)
         save_boundary_gt_csv(result_dir / "boundary_ground_truths.csv", ground_truths)
         valid_area_km2 = estimate_valid_area_km2(src)
+        area_text = f"{valid_area_km2:.3f} km²" if valid_area_km2 > 0 else "未计算"
         print(f"[数据] 影像尺寸: {src.width} × {src.height} | CRS: {src.crs}")
-        print(f"[数据] 真值目标: {len(ground_truths)} | 有效面积: {valid_area_km2:.3f} km²")
+        print(f"[数据] 真值目标: {len(ground_truths)} | 有效面积: {area_text}")
         print(
             f"[数据] 边界目标: {sum(gt.max_visible_ratio < BOUNDARY_GT_VISIBILITY for gt in ground_truths)} | "
             f"严重截断: {sum(gt.max_visible_ratio < SEVERE_BOUNDARY_GT_VISIBILITY for gt in ground_truths)}"
@@ -1352,9 +1525,16 @@ def run_experiment(strategy_code: str) -> None:
 
         raw_detections = base_detections + refine_detections
         if strategy.use_brdcf:
-            final_detections = brdcf_fusion(raw_detections)
+            postprocessed_detections = brdcf_fusion(raw_detections)
         else:
-            final_detections = global_nms(raw_detections, GLOBAL_NMS_IOU)
+            postprocessed_detections = global_nms(raw_detections, GLOBAL_NMS_IOU)
+
+        # 与正式实用版保持一致：先完成 NMS/BR-DCF，再按跨窗口支持次数过滤。
+        final_detections = [
+            detection
+            for detection in postprocessed_detections
+            if detection.support_count >= MIN_SUPPORT_COUNT
+        ]
 
         if device.type == "cuda":
             torch.cuda.synchronize(device)
@@ -1363,14 +1543,18 @@ def run_experiment(strategy_code: str) -> None:
         # mAP 使用所有低阈值融合结果；制图仅输出最终阈值以上目标。
         export_detections = [det for det in final_detections if det.score >= FINAL_CONF]
         metrics: Dict[str, Any] = {
+            "GT": len(ground_truths),
             "inference_seconds": inference_seconds,
             "valid_area_km2": valid_area_km2,
-            "seconds_per_km2": inference_seconds / valid_area_km2,
+            "seconds_per_km2": (
+                inference_seconds / valid_area_km2 if valid_area_km2 > 0 else None
+            ),
             "base_windows": base_windows,
             "skipped_windows": skipped_windows,
             "refine_windows": len(refine_windows_specs),
             "refine_window_ratio": len(refine_windows_specs) / base_windows if base_windows else 0.0,
             "raw_candidate_boxes": len(raw_detections),
+            "postprocessed_candidate_boxes": len(postprocessed_detections),
             "final_candidate_boxes": len(final_detections),
             "exported_boxes": len(export_detections),
         }
@@ -1386,6 +1570,7 @@ def run_experiment(strategy_code: str) -> None:
             ) | {
                 "skipped_windows": skipped_windows,
                 "raw_candidate_boxes": len(raw_detections),
+                "postprocessed_candidate_boxes": len(postprocessed_detections),
                 "final_candidate_boxes": len(final_detections),
                 "exported_boxes": len(export_detections),
             }
@@ -1407,6 +1592,9 @@ def run_experiment(strategy_code: str) -> None:
 
     metadata = {
         "strategy": asdict(strategy),
+        "model_mode": MODEL_MODE,
+        "model_tag": MODEL_TAG,
+        "model_size": MODEL_SIZE,
         "input_tif": INPUT_TIF,
         "gt_vector": GT_VECTOR,
         "model_config": MODEL_CONFIG,
@@ -1414,14 +1602,31 @@ def run_experiment(strategy_code: str) -> None:
         "device": str(device),
         "model_input_size": MODEL_INPUT_SIZE,
         "base_tile_size": BASE_TILE_SIZE,
+        "base_stride": strategy.stride,
+        "batch_size": BATCH_SIZE,
         "candidate_conf": CANDIDATE_CONF,
+        "max_candidates_per_window_view": MAX_CANDIDATES_PER_WINDOW_VIEW,
         "final_conf": FINAL_CONF,
+        "min_support_count": MIN_SUPPORT_COUNT,
         "global_nms_iou": GLOBAL_NMS_IOU,
         "edge_margin": EDGE_MARGIN,
         "edge_risk_threshold": EDGE_RISK_THRESHOLD,
         "refine_context_size": REFINE_CONTEXT_SIZE,
+        "refine_min_conf": REFINE_MIN_CONF,
+        "refine_stable_conf": REFINE_STABLE_CONF,
+        "refine_uncertain_candidates": REFINE_UNCERTAIN_CANDIDATES,
+        "refine_trigger_nms_iou": REFINE_TRIGGER_NMS_IOU,
+        "max_refine_windows": MAX_REFINE_WINDOWS,
         "selective_tta_modes": list(SELECTIVE_TTA_MODES),
         "fusion_iou": FUSION_IOU,
+        "fusion_gamma": FUSION_GAMMA,
+        "fusion_center_floor": FUSION_CENTER_FLOOR,
+        "fusion_consistency_floor": FUSION_CONSISTENCY_FLOOR,
+        "black_threshold": BLACK_THRESHOLD,
+        "min_valid_ratio": MIN_VALID_RATIO,
+        "allow_non_uint8": ALLOW_NON_UINT8,
+        "calculate_area_metrics": CALCULATE_AREA_METRICS,
+        "configured_valid_area_km2": VALID_AREA_KM2,
         "metrics": metrics,
     }
     (result_dir / "run_config_and_metrics.json").write_text(
@@ -1429,7 +1634,7 @@ def run_experiment(strategy_code: str) -> None:
     )
     save_metrics_txt(result_dir / "metrics.txt", strategy, metrics)
     update_comparison_summary(
-        Path(OUTPUT_ROOT) / "strategy_comparison_summary.csv", strategy, metrics
+        Path(OUTPUT_ROOT) / "strategy_comparison_summary.txt", strategy, metrics
     )
 
     print("\n========== 本次实验结果 ==========")
@@ -1439,19 +1644,25 @@ def run_experiment(strategy_code: str) -> None:
         else:
             print(f"{key:28s}: {value}")
     print(f"结果已保存: {result_dir}")
-    print(f"五组汇总表: {Path(OUTPUT_ROOT) / 'strategy_comparison_summary.csv'}")
+    print(f"五组汇总表: {Path(OUTPUT_ROOT) / 'strategy_comparison_summary.txt'}")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="D-FINE 大范围遥感影像火电厂推理策略对比")
     parser.add_argument(
         "--strategy",
-        choices=list("ABCDE"),
+        type=str.upper,
+        choices=[*STRATEGIES, "ALL"],
         default=STRATEGY_MODE,
-        help="覆盖脚本顶部的 STRATEGY_MODE",
+        help="覆盖脚本顶部的 STRATEGY_MODE；ALL 依次运行 B/C/D/E/F 五组消融",
     )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
-    run_experiment(parse_args().strategy)
+    selected_strategy = parse_args().strategy.upper()
+    if selected_strategy == "ALL":
+        for ablation_strategy in ABLATION_STRATEGY_ORDER:
+            run_experiment(ablation_strategy)
+    else:
+        run_experiment(selected_strategy)
