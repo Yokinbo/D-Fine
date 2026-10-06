@@ -110,7 +110,7 @@ INPUT_TIF = r"G:\金三角tif影像\宁夏\银川市\灵武市1.88m\Level16\灵�
 # ArcMap 标注的火电厂水平矩形真值框。
 # 推荐 Shapefile / GeoPackage；使用这两种格式时需要 geopandas。
 # 也支持与影像坐标系完全一致的 GeoJSON（无需 geopandas）。
-GT_VECTOR = r"F:\3能源金三角基础设施识别\火力发电厂\火电厂论文撰写\大图推理策略实验\灵武市火电真值shp\lingwuhuodian.shp"
+GT_VECTOR = r"F:\3能源金三角基础设施识别\火力发电厂\火电厂论文撰写\大图推理策略实验\灵武市策略推理\灵武市火电真值shp\lingwuhuodian.shp"
 
 # 与“大范围遥感影像推理正式实用版.py”保持同一模型选择：
 # D-FINE-M + DSQC+RBA。RBA 是训练期正则，推理网络结构由对应 YAML 恢复。
@@ -123,17 +123,17 @@ CHECKPOINT = r"G:\b1完整目标检测模型与权重结果\权重结果\改进�
 # 本任务仅检测火电厂（hdc）。必须与训练权重的检测头类别数一致。
 NUM_CLASSES = 1
 # 每种策略自动建立 strategy_A、strategy_B ... 子目录。
-OUTPUT_ROOT = r"F:\3能源金三角基础设施识别\火力发电厂\火电厂论文撰写\大图推理策略实验\测试可删\策略对比试验ALL"
+OUTPUT_ROOT = r"F:\3能源金三角基础设施识别\火力发电厂\火电厂论文撰写\大图推理策略实验\灵武市策略推理\策略对比试验ALL_3"
 # 低阈值候选用于 COCO 风格 mAP 曲线；最终制图与 P/R/F1 使用 FINAL_CONF。
 CANDIDATE_CONF = 0.05
 #需要自己设置推理置信度
 FINAL_CONF = 0.60
-
+SHP_OUTPUT_NAME = "灵武市置信度0.6.shp"
 # 输出选项。GeoJSON 和 CSV 始终可写；GPKG/SHP 需要 geopandas。
 WRITE_GPKG = True
 WRITE_SHP = True
 # 默认文件名；正式实用版会在运行时覆盖为其 SHP_OUTPUT_NAME 配置。
-SHP_OUTPUT_NAME = "灵武置信度0.6.shp"
+
 WRITE_PREVIEW = True
 PREVIEW_MAX_SIZE = 2400
 

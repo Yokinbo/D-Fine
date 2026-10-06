@@ -69,7 +69,7 @@ def model_config_for_mode(mode: str) -> Path:
 # =============================================================================
 
 # 待检测的灵武市/镇级/县级 RGB GeoTIFF 绝对路径。
-INPUT_TIF = r"G:\金三角tif影像\宁夏\银川市\灵武市1.88m\Level16\灵武市1.88m.tif"
+INPUT_TIF = r"G:\金三角tif影像\榆林市\神木市\锦界镇1.86m\Level16\锦界镇1.86m.tif"
 
 # 明确指定本次权重的网络模式。这里设为 dsqc_rba 后，不受
 # my_improve/settings.py 中 IMPROVEMENT_MODE 当前值影响。
@@ -86,13 +86,13 @@ NUM_CLASSES = 1
 CHECKPOINT = r"G:\b1完整目标检测模型与权重结果\权重结果\改进实验dfine\dsqc_rba\最佳2e-4_SD18\best_map50.pth"
 
 # 本次正式应用的独立输出目录。
-OUTPUT_DIR = r"F:\3能源金三角基础设施识别\火力发电厂\火电厂论文撰写\大图推理策略实验\测试可删\策略灵武0.6"
+OUTPUT_DIR = r"F:\3能源金三角基础设施识别\火力发电厂\火电厂论文撰写\大图推理策略实验\锦界镇策略推理\策略锦界镇0.5"
 
 # Shapefile 输出文件名：只填写文件名并保留 .shp 后缀，文件仍保存到 OUTPUT_DIR。
-SHP_OUTPUT_NAME = "策略灵武市-置信度0.6.shp"
+SHP_OUTPUT_NAME = "策略锦界镇-置信度0.5.shp"
 # 最终制图置信度：先填写 valid.py 报告的最佳 F1 置信度，再根据
 # 真实大图上的误检/漏检人工调整。也可用 --confidence 临时覆盖。
-FINAL_CONFIDENCE = 0.6
+FINAL_CONFIDENCE = 0.5
 
 # 推理策略总开关：
 # True：使用 F 策略（重叠滑窗 + 扩展视域复检 + BR-DCF + 选择性 TTA）。
